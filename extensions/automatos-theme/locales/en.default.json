@@ -1,0 +1,35 @@
+{
+  "chat_widget": {
+    "name": "Automatos Support Chat",
+    "settings": {
+      "api_key": "API Key",
+      "agent_id": "Agent ID",
+      "position": "Position",
+      "theme": "Theme",
+      "primary_color": "Accent colour",
+      "respect_consent": "Respect cookie consent"
+    }
+  },
+  "product_qa": {
+    "name": "Automatos Product Q&A",
+    "settings": {
+      "heading": "Heading",
+      "subheading": "Subheading"
+    }
+  },
+  "blog_widget": {
+    "name": "Automatos Blog",
+    "settings": {
+      "heading": "Heading",
+      "layout": "Layout",
+      "posts_per_page": "Posts per page"
+    }
+  },
+  "review_summary": {
+    "name": "Automatos Review Summary",
+    "settings": {
+      "heading": "Heading",
+      "subheading": "Subheading"
+    }
+  }
+}

@@ -1,0 +1,91 @@
+<div
+  id="automatos-chat-{{ block.id }}"
+  data-automatos-widget="chat"
+  data-api-key="{{ block.settings.api_key }}"
+  data-agent-id="{{ block.settings.agent_id }}"
+  data-position="{{ block.settings.position }}"
+  data-theme="{{ block.settings.theme }}"
+  data-primary-color="{{ block.settings.primary_color }}"
+  style="display:none;"
+></div>
+
+<script src="{{ 'widget.js' | asset_url }}" defer></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof AutomatosWidget === 'undefined') return;
+
+    {% if block.settings.respect_consent %}
+    if (window.Shopify && window.Shopify.customerPrivacy) {
+      var consent = window.Shopify.customerPrivacy.currentVisitorConsent();
+      if (consent && consent.marketing !== 'yes') return;
+    }
+    {% endif %}
+
+    AutomatosWidget.init({
+      apiKey: {{ block.settings.api_key | json }},
+      widget: 'chat',
+      agentId: {{ block.settings.agent_id | json }},
+      position: {{ block.settings.position | json }},
+      theme: {{ block.settings.theme | json }},
+      themeOverrides: {
+        '--aw-primary': {{ block.settings.primary_color | json }},
+      },
+    });
+  });
+</script>
+
+{% schema %}
+{
+  "name": "Automatos Support Chat",
+  "target": "body",
+  "javascript": "widget.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "api_key",
+      "label": "API Key",
+      "info": "Your Automatos public API key (ak_pub_...)"
+    },
+    {
+      "type": "text",
+      "id": "agent_id",
+      "label": "Agent ID",
+      "info": "The support agent UUID. Found in Automatos app settings."
+    },
+    {
+      "type": "select",
+      "id": "position",
+      "label": "Position",
+      "default": "bottom-right",
+      "options": [
+        { "value": "bottom-right", "label": "Bottom right" },
+        { "value": "bottom-left", "label": "Bottom left" }
+      ]
+    },
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Theme",
+      "default": "light",
+      "options": [
+        { "value": "light", "label": "Light" },
+        { "value": "dark", "label": "Dark" }
+      ]
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Accent colour",
+      "default": "#6366f1",
+      "info": "Matches your brand colour on buttons and links"
+    },
+    {
+      "type": "checkbox",
+      "id": "respect_consent",
+      "label": "Respect cookie consent",
+      "default": true,
+      "info": "Only load chat after visitor grants marketing consent (GDPR)"
+    }
+  ]
+}
+{% endschema %}

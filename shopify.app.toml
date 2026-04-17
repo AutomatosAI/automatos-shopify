@@ -1,0 +1,50 @@
+# Automatos AI — Shopify App Configuration
+# https://shopify.dev/docs/apps/tools/cli/configuration
+
+name = "Automatos AI"
+client_id = ""
+application_url = "https://automatos-shopify.fly.dev"
+embedded = true
+
+[access_scopes]
+# Canonical scope list for the Automatos Shopify integration.
+# MUST stay in sync with FULL_SCOPES in scripts/composio-setup.mjs — a mismatch
+# causes Composio-issued tokens to have scopes the installed app doesn't, which
+# breaks agent tool calls with 403s. If you add a scope here, add it there too
+# (and re-run `node --env-file=.env.local scripts/composio-setup.mjs` to refresh
+# the auth config).
+scopes = "read_products,write_products,read_orders,write_orders,read_all_orders,read_customers,write_customers,read_inventory,write_inventory,read_content,write_content,read_discounts,write_discounts,read_price_rules,write_price_rules,read_fulfillments,write_fulfillments,read_gift_cards,write_gift_cards,read_draft_orders,write_draft_orders,read_shipping,write_shipping,read_analytics,read_reports,read_marketing_events,write_marketing_events,read_themes,write_themes,read_script_tags,write_script_tags,read_checkouts,write_checkouts,read_product_listings,read_locations"
+
+[auth]
+redirect_urls = [
+  "https://automatos-shopify.fly.dev/auth/callback",
+  "https://automatos-shopify.fly.dev/auth/shopify/callback",
+  "https://automatos-shopify.fly.dev/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2025-04"
+
+  [webhooks.subscriptions]
+
+  [[webhooks.subscriptions.compliance]]
+  topics = ["customers/data_request", "customers/redact", "shop/redact"]
+
+  [[webhooks.subscriptions.topics]]
+  uri = "/webhooks/app/uninstalled"
+  topics = ["app/uninstalled"]
+
+  [[webhooks.subscriptions.topics]]
+  uri = "/webhooks/shop/update"
+  topics = ["shop/update"]
+
+  [[webhooks.subscriptions.topics]]
+  uri = "/webhooks/orders/create"
+  topics = ["orders/create"]
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = ""

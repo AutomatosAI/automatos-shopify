@@ -1,0 +1,161 @@
+<div
+  id="automatos-blog-{{ block.id }}"
+  class="automatos-blog-widget"
+  data-automatos-widget="blog"
+  data-api-key="{{ block.settings.api_key }}"
+  data-agent-id="{{ block.settings.agent_id }}"
+>
+  <div class="automatos-blog__container" style="
+    max-width: {{ block.settings.max_width }}px;
+    margin: {{ block.settings.margin_top }}px auto {{ block.settings.margin_bottom }}px;
+    font-family: inherit;
+  ">
+    {% if block.settings.show_heading %}
+    <h2 style="margin: 0 0 24px; font-size: 24px; text-align: {{ block.settings.heading_align }};">
+      {{ block.settings.heading }}
+    </h2>
+    {% endif %}
+    <div id="automatos-blog-mount-{{ block.id }}" style="min-height: 400px;"></div>
+  </div>
+</div>
+
+<script src="{{ 'widget.js' | asset_url }}" defer></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof AutomatosWidget === 'undefined') return;
+
+    AutomatosWidget.init({
+      apiKey: {{ block.settings.api_key | json }},
+      widget: 'blog',
+      agentId: {{ block.settings.agent_id | json }},
+      containerSelector: '#automatos-blog-mount-{{ block.id }}',
+      theme: {{ block.settings.theme | json }},
+      blogConfig: {
+        layout: {{ block.settings.layout | json }},
+        postsPerPage: {{ block.settings.posts_per_page }},
+        category: {{ block.settings.category | json }},
+      },
+      themeOverrides: {
+        '--aw-primary': {{ block.settings.primary_color | json }},
+      },
+    });
+  });
+</script>
+
+{% schema %}
+{
+  "name": "Automatos Blog",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "api_key",
+      "label": "API Key",
+      "info": "Your Automatos public API key"
+    },
+    {
+      "type": "text",
+      "id": "agent_id",
+      "label": "SEO/Content Agent ID",
+      "info": "UUID of the SEO/Content agent"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_heading",
+      "label": "Show heading",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "From Our Blog"
+    },
+    {
+      "type": "select",
+      "id": "heading_align",
+      "label": "Heading alignment",
+      "default": "left",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "center", "label": "Centre" },
+        { "value": "right", "label": "Right" }
+      ]
+    },
+    {
+      "type": "select",
+      "id": "layout",
+      "label": "Layout",
+      "default": "grid",
+      "options": [
+        { "value": "grid", "label": "Grid" },
+        { "value": "list", "label": "List" },
+        { "value": "featured", "label": "Featured" },
+        { "value": "minimal", "label": "Minimal" }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "posts_per_page",
+      "label": "Posts per page",
+      "min": 3,
+      "max": 12,
+      "step": 3,
+      "default": 6
+    },
+    {
+      "type": "text",
+      "id": "category",
+      "label": "Category filter",
+      "info": "Show only posts from this category (leave blank for all)"
+    },
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Theme",
+      "default": "light",
+      "options": [
+        { "value": "light", "label": "Light" },
+        { "value": "dark", "label": "Dark" }
+      ]
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Accent colour",
+      "default": "#6366f1"
+    },
+    {
+      "type": "range",
+      "id": "max_width",
+      "label": "Max width",
+      "min": 600,
+      "max": 1400,
+      "step": 100,
+      "default": 1200,
+      "unit": "px"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "label": "Top margin",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "default": 40,
+      "unit": "px"
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "label": "Bottom margin",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "default": 40,
+      "unit": "px"
+    }
+  ],
+  "templates": ["index", "blog", "page", "collection"]
+}
+{% endschema %}

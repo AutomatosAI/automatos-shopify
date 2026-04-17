@@ -1,0 +1,28 @@
+# Automatos AI — Theme Extension
+# Provides app embed + app blocks for storefront widgets.
+
+api_version = "2025-04"
+
+[[extensions]]
+type = "theme"
+name = "Automatos AI Widgets"
+handle = "automatos-widgets"
+
+  [extensions.capabilities]
+  block_progression = true
+
+  [[extensions.targeting]]
+  target = "body"
+  module = "./blocks/chat-widget.liquid"
+
+  [[extensions.targeting]]
+  target = "section"
+  module = "./blocks/product-qa.liquid"
+
+  [[extensions.targeting]]
+  target = "section"
+  module = "./blocks/blog-widget.liquid"
+
+  [[extensions.targeting]]
+  target = "section"
+  module = "./blocks/review-summary.liquid"

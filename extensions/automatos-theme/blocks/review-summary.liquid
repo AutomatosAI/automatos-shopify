@@ -1,0 +1,197 @@
+<div
+  id="automatos-reviews-{{ block.id }}"
+  class="automatos-review-summary"
+  data-automatos-widget="review-summary"
+  data-api-key="{{ block.settings.api_key }}"
+  data-agent-id="{{ block.settings.agent_id }}"
+  data-product-id="{{ product.id }}"
+>
+  <div class="automatos-reviews__container" style="
+    border: 1px solid {{ block.settings.border_color }};
+    border-radius: 12px;
+    padding: 20px;
+    margin: {{ block.settings.margin_top }}px 0 {{ block.settings.margin_bottom }}px;
+    font-family: inherit;
+  ">
+    <h3 style="margin: 0 0 12px; font-size: 18px;">
+      {{ block.settings.heading }}
+    </h3>
+    <p style="margin: 0 0 16px; color: #6b7280; font-size: 14px;">
+      {{ block.settings.subheading }}
+    </p>
+    <div id="automatos-reviews-mount-{{ block.id }}" style="min-height: 150px;">
+      <p style="color: #9ca3af;">Loading review summary...</p>
+    </div>
+  </div>
+</div>
+
+<script src="{{ 'widget.js' | asset_url }}" defer></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof AutomatosWidget === 'undefined') return;
+
+    var mountEl = document.getElementById('automatos-reviews-mount-{{ block.id }}');
+    if (!mountEl) return;
+
+    var apiKey = {{ block.settings.api_key | json }};
+    var agentId = {{ block.settings.agent_id | json }};
+    var productId = {{ product.id | json }};
+    var productTitle = {{ product.title | json }};
+
+    fetch(
+      ({{ block.settings.api_url | default: "https://api.automatos.app" | json }}) +
+      '/api/widgets/review-summary?' +
+      'product_id=' + encodeURIComponent(productId) +
+      '&product_title=' + encodeURIComponent(productTitle) +
+      '&agent_id=' + encodeURIComponent(agentId),
+      {
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      while (mountEl.firstChild) mountEl.removeChild(mountEl.firstChild);
+
+      if (!data.summary) {
+        var noReviews = document.createElement('p');
+        noReviews.style.color = '#9ca3af';
+        noReviews.textContent = 'No reviews to summarize yet.';
+        mountEl.appendChild(noReviews);
+        return;
+      }
+
+      var wrapper = document.createElement('div');
+      wrapper.style.lineHeight = '1.6';
+
+      if (data.pros && data.pros.length > 0) {
+        var prosSection = document.createElement('div');
+        prosSection.style.marginBottom = '12px';
+        var prosTitle = document.createElement('strong');
+        prosTitle.style.color = '#059669';
+        prosTitle.textContent = 'What people love';
+        prosSection.appendChild(prosTitle);
+        var prosList = document.createElement('ul');
+        prosList.style.cssText = 'margin: 8px 0; padding-left: 20px;';
+        data.pros.forEach(function(p) {
+          var li = document.createElement('li');
+          li.textContent = p;
+          prosList.appendChild(li);
+        });
+        prosSection.appendChild(prosList);
+        wrapper.appendChild(prosSection);
+      }
+
+      if (data.cons && data.cons.length > 0) {
+        var consSection = document.createElement('div');
+        consSection.style.marginBottom = '12px';
+        var consTitle = document.createElement('strong');
+        consTitle.style.color = '#dc2626';
+        consTitle.textContent = 'Worth knowing';
+        consSection.appendChild(consTitle);
+        var consList = document.createElement('ul');
+        consList.style.cssText = 'margin: 8px 0; padding-left: 20px;';
+        data.cons.forEach(function(c) {
+          var li = document.createElement('li');
+          li.textContent = c;
+          consList.appendChild(li);
+        });
+        consSection.appendChild(consList);
+        wrapper.appendChild(consSection);
+      }
+
+      var countLine = document.createElement('p');
+      countLine.style.cssText = 'font-size: 13px; color: #9ca3af;';
+      countLine.textContent = 'Based on ' + (data.review_count || 0) + ' reviews';
+      wrapper.appendChild(countLine);
+
+      mountEl.appendChild(wrapper);
+    })
+    .catch(function() {
+      while (mountEl.firstChild) mountEl.removeChild(mountEl.firstChild);
+      var errMsg = document.createElement('p');
+      errMsg.style.color = '#9ca3af';
+      errMsg.textContent = 'Unable to load review summary.';
+      mountEl.appendChild(errMsg);
+    });
+  });
+</script>
+
+{% schema %}
+{
+  "name": "Automatos Review Summary",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "api_key",
+      "label": "API Key",
+      "info": "Your Automatos public API key"
+    },
+    {
+      "type": "text",
+      "id": "agent_id",
+      "label": "Review Analyst Agent ID",
+      "info": "UUID of the Review Analyst agent"
+    },
+    {
+      "type": "text",
+      "id": "api_url",
+      "label": "API URL",
+      "default": "https://api.automatos.app",
+      "info": "Automatos API base URL"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "What do customers say?"
+    },
+    {
+      "type": "text",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "AI-powered summary of customer reviews — the honest pros and cons."
+    },
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Theme",
+      "default": "light",
+      "options": [
+        { "value": "light", "label": "Light" },
+        { "value": "dark", "label": "Dark" }
+      ]
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border colour",
+      "default": "#e5e7eb"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "label": "Top margin",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 20,
+      "unit": "px"
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "label": "Bottom margin",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 20,
+      "unit": "px"
+    }
+  ],
+  "templates": ["product"]
+}
+{% endschema %}

@@ -1,0 +1,169 @@
+# Widget SDK deploy workflow — TEMPLATE for automatos-widget-sdk/.github/workflows/deploy.yml
+#
+# Copy this file into the automatos-widget-sdk repo as:
+#   .github/workflows/deploy.yml
+#
+# Triggered on any tag matching v*.*.*.
+#
+# Secrets required in the automatos-widget-sdk repo:
+#   AWS_SDK_DEPLOY_ACCESS_KEY_ID
+#   AWS_SDK_DEPLOY_SECRET_ACCESS_KEY
+#   AWS_SDK_DEPLOY_REGION              (e.g., us-east-1)
+#   AWS_SDK_DEPLOY_BUCKET              (e.g., automatos-widget-sdk)
+#   AWS_SDK_DEPLOY_DISTRIBUTION_ID     (CloudFront distribution ID)
+#
+# Prefer OIDC federation over long-lived keys once the AWS OIDC provider is wired.
+# See docs/RUNBOOKS/widget-sdk-aws-setup.md §5b.
+
+name: Deploy Widget SDK to CDN
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'         # stable releases
+      - 'beta-*'         # beta channel
+
+concurrency:
+  group: deploy-widget-sdk-${{ github.ref }}
+  cancel-in-progress: false    # never cancel a deploy mid-flight
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # id-token: write           # uncomment when migrating to OIDC federation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify build artifacts
+        run: |
+          set -e
+          LOADER=packages/loader/dist/widget.global.js
+          if [ ! -f "$LOADER" ]; then
+            echo "::error::missing build artifact: $LOADER"
+            exit 1
+          fi
+          SIZE_BYTES=$(wc -c < "$LOADER" | tr -d ' ')
+          echo "Loader size: $SIZE_BYTES bytes"
+          # Alarm threshold: gzipped should be well under 80 KB. Raw IIFE rarely exceeds 300 KB.
+          if [ "$SIZE_BYTES" -gt 500000 ]; then
+            echo "::warning::loader exceeded 500 KB raw — check for accidental dep inclusion"
+          fi
+
+      - name: Determine channel + version
+        id: release
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == beta-* ]]; then
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "version_path=beta" >> "$GITHUB_OUTPUT"
+            echo "stable_alias=" >> "$GITHUB_OUTPUT"
+          else
+            # v1.4.3 → version_path=v1.4.3, stable_alias=v1
+            VERSION="${TAG}"
+            MAJOR=$(echo "$VERSION" | sed -E 's/^v([0-9]+).*/v\1/')
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "version_path=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "stable_alias=$MAJOR" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SDK_DEPLOY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SDK_DEPLOY_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_SDK_DEPLOY_REGION }}
+          # For OIDC migration, replace the above three with:
+          # role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/automatos-widget-sdk-deploy
+          # role-session-name: widget-sdk-deploy-${{ github.run_id }}
+
+      - name: Upload to immutable version path
+        run: |
+          aws s3 sync packages/loader/dist/ \
+            "s3://${{ secrets.AWS_SDK_DEPLOY_BUCKET }}/${{ steps.release.outputs.version_path }}/" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --content-type "application/javascript" \
+            --exclude "*" \
+            --include "*.js" \
+            --include "*.js.map"
+
+      - name: Upload to stable channel (only for v*.*.* tags)
+        if: steps.release.outputs.channel == 'stable'
+        run: |
+          aws s3 sync packages/loader/dist/ \
+            "s3://${{ secrets.AWS_SDK_DEPLOY_BUCKET }}/${{ steps.release.outputs.stable_alias }}/" \
+            --cache-control "public, max-age=3600" \
+            --content-type "application/javascript" \
+            --exclude "*" \
+            --include "*.js" \
+            --include "*.js.map" \
+            --metadata-directive REPLACE
+
+      - name: Invalidate stable channel
+        if: steps.release.outputs.channel == 'stable'
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.AWS_SDK_DEPLOY_DISTRIBUTION_ID }}" \
+            --paths "/${{ steps.release.outputs.stable_alias }}/*"
+
+      - name: Invalidate beta (beta is short-TTL anyway but invalidate for immediate effect)
+        if: steps.release.outputs.channel == 'beta'
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.AWS_SDK_DEPLOY_DISTRIBUTION_ID }}" \
+            --paths "/beta/*"
+
+      - name: Smoke test
+        run: |
+          set -e
+          if [ "${{ steps.release.outputs.channel }}" = "stable" ]; then
+            URL="https://sdk.automatos.app/${{ steps.release.outputs.stable_alias }}/widget.global.js"
+          else
+            URL="https://sdk.automatos.app/beta/widget.global.js"
+          fi
+          echo "Testing: $URL"
+          # Retry for up to 2 minutes while CloudFront invalidation propagates
+          for i in {1..24}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "::notice::$URL is live (HTTP 200)"
+              curl -sI "$URL"
+              exit 0
+            fi
+            echo "attempt $i: HTTP $HTTP_CODE — retrying in 5s"
+            sleep 5
+          done
+          echo "::error::smoke test failed for $URL"
+          exit 1
+
+      - name: Summary
+        run: |
+          {
+            echo "## Deploy summary"
+            echo ""
+            echo "- Channel: \`${{ steps.release.outputs.channel }}\`"
+            echo "- Immutable path: \`${{ steps.release.outputs.version_path }}\`"
+            echo "- Stable alias: \`${{ steps.release.outputs.stable_alias }}\`"
+            echo "- Bucket: \`${{ secrets.AWS_SDK_DEPLOY_BUCKET }}\`"
+            echo "- Distribution: \`${{ secrets.AWS_SDK_DEPLOY_DISTRIBUTION_ID }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

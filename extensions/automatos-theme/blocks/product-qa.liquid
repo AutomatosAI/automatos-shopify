@@ -1,0 +1,129 @@
+<div
+  id="automatos-qa-{{ block.id }}"
+  class="automatos-product-qa"
+  data-automatos-widget="product-qa"
+  data-api-key="{{ block.settings.api_key }}"
+  data-agent-id="{{ block.settings.agent_id }}"
+  data-product-id="{{ product.id }}"
+  data-product-title="{{ product.title | escape }}"
+  data-product-handle="{{ product.handle }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+>
+  <div class="automatos-qa__container" style="
+    border: 1px solid {{ block.settings.border_color }};
+    border-radius: 12px;
+    padding: 20px;
+    margin: {{ block.settings.margin_top }}px 0 {{ block.settings.margin_bottom }}px;
+    font-family: inherit;
+  ">
+    <h3 style="margin: 0 0 12px; font-size: 18px;">
+      {{ block.settings.heading }}
+    </h3>
+    <p style="margin: 0 0 16px; color: #6b7280; font-size: 14px;">
+      {{ block.settings.subheading }}
+    </p>
+    <div id="automatos-qa-chat-{{ block.id }}" style="min-height: 200px;"></div>
+  </div>
+</div>
+
+<script src="{{ 'widget.js' | asset_url }}" defer></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof AutomatosWidget === 'undefined') return;
+
+    AutomatosWidget.init({
+      apiKey: {{ block.settings.api_key | json }},
+      widget: 'chat',
+      agentId: {{ block.settings.agent_id | json }},
+      containerSelector: '#automatos-qa-chat-{{ block.id }}',
+      theme: {{ block.settings.theme | json }},
+      context: {
+        product_id: {{ product.id | json }},
+        product_title: {{ product.title | json }},
+        product_handle: {{ product.handle | json }},
+        variant_id: {{ product.selected_or_first_available_variant.id | json }},
+        price: {{ product.price | money | json }},
+        vendor: {{ product.vendor | json }},
+      },
+      themeOverrides: {
+        '--aw-primary': {{ block.settings.primary_color | json }},
+      },
+    });
+  });
+</script>
+
+{% schema %}
+{
+  "name": "Automatos Product Q&A",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "api_key",
+      "label": "API Key",
+      "info": "Your Automatos public API key"
+    },
+    {
+      "type": "text",
+      "id": "agent_id",
+      "label": "Product Expert Agent ID",
+      "info": "UUID of the Product Expert agent"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Ask about this product"
+    },
+    {
+      "type": "text",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "Our AI expert answers from specs, reviews, and product details."
+    },
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Theme",
+      "default": "light",
+      "options": [
+        { "value": "light", "label": "Light" },
+        { "value": "dark", "label": "Dark" }
+      ]
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Accent colour",
+      "default": "#6366f1"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border colour",
+      "default": "#e5e7eb"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "label": "Top margin",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 20,
+      "unit": "px"
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "label": "Bottom margin",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 20,
+      "unit": "px"
+    }
+  ],
+  "templates": ["product"]
+}
+{% endschema %}
