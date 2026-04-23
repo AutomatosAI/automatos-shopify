@@ -2,6 +2,7 @@
 # Provides app embed + app blocks for storefront widgets.
 
 api_version = "2025-04"
+uid = "c6e2ba60-9d47-8f93-5dee-2a213a58b73f40773723"
 
 [[extensions]]
 type = "theme"
