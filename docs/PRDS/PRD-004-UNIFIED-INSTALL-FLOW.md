@@ -3,7 +3,7 @@
 **PRD ID:** SHOPIFY-004
 **Status:** Draft
 **Owner:** Gerard
-**Date:** 2026-04-16
+**Date:** 2026-04-16 (revised 2026-05-07)
 **Priority:** P1 — Unlocks self-serve onboarding for the App Store launch
 
 ---
@@ -43,13 +43,12 @@ Single Shopify App Store install = widgets ready AND agent tools wired. Zero das
 
 This is largely built. Do not rewrite it.
 
-**Already wired in `app/routes/auth.callback.tsx`:**
+**Already wired in `app/routes/auth.callback.tsx` (post-2026-05-07 contract refactor):**
 - Fetches shop metadata via GraphQL
-- Calls `automatosClient.provisionWorkspace(session.shop, shopData)` — idempotent
-- Calls `automatosClient.seedAgents(workspace.id)` — installs 9 Shopify agents
-- Calls `automatosClient.storeShopifyCredentials(workspace.id, session.shop, session.accessToken)` — POSTs to orchestrator `/api/integrations/shopify/connect`
+- Calls `automatosClient.provisionWorkspace(session.shop, shopData)` — POSTs to orchestrator `/api/shopify/provision`. Idempotent on `shopify_domain`. Returns `{id, public_id, name, api_key, agents_installed, is_new}`. Workspace creation, marketplace agent cloning, and public widget API key minting all happen server-side in this single call.
+- Calls `automatosClient.storeShopifyCredentials(workspace.public_id, session.shop, session.accessToken)` — POSTs to orchestrator `/api/shopify/connect`
 
-**The single remaining gap** is: the orchestrator's `/api/integrations/shopify/connect` endpoint currently stores the token locally (for server-to-server Admin API calls) but **does not register a Composio `connected_account` using that token**. That's the one missing step.
+**The single remaining gap** is: the orchestrator's `/api/shopify/connect` endpoint currently stores the token in `workspace.settings.shopify_access_token` (for server-to-server Admin API fallback) but **does not register a Composio `connected_account` using that token**. That's the one missing step. Until this lands, per-merchant Composio wiring is manual via `scripts/composio-resume.mjs` per the `docs/RUNBOOKS/client-onboarding.md` runbook.
 
 ---
 
@@ -57,7 +56,7 @@ This is largely built. Do not rewrite it.
 
 ### In scope
 - Spike: confirm Composio SDK API for creating a `connected_account` from a pre-obtained OAuth access token (must happen before implementation)
-- Extend orchestrator `/api/integrations/shopify/connect` to additionally call Composio with the imported token
+- Extend orchestrator `/api/shopify/connect` to additionally call Composio with the imported token
 - Store the resulting `connected_account_id` on the workspace row
 - Handle existing-connection case (update vs duplicate)
 - Handle re-install (revoke old `connected_account`? replace token? product decision)
@@ -121,7 +120,7 @@ Spike output: 1-page memo in this PRD's comments with the confirmed API shape an
 
 **File:** `automatos-ai/orchestrator/api/shopify.py`
 
-Extend the existing `/api/integrations/shopify/connect` endpoint handler:
+Extend the existing `/api/shopify/connect` endpoint handler:
 
 1. Store access token (as today — for direct Admin API fallback).
 2. Call `composio_client.import_access_token(entity_id=workspace.public_id, auth_config_id=SHOPIFY_AUTH_CONFIG_ID, access_token=..., shop=...)`.
@@ -148,7 +147,7 @@ When a workspace has `shopify_composio_connection_id` imported via App Store ins
 
 ### 5. Re-install handling
 
-When `/api/integrations/shopify/connect` fires for a shop that already has a `shopify_composio_connection_id`:
+When `/api/shopify/connect` fires for a shop that already has a `shopify_composio_connection_id`:
 - If stored `connected_account` still ACTIVE in Composio → update token in place (Composio supports credential rotation), no new connection created
 - If stale / FAILED → delete old, create new
 

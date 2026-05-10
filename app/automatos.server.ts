@@ -1,43 +1,64 @@
 /**
  * Automatos Platform API Client
  *
- * Server-side client for communicating with the Automatos orchestrator.
- * Handles workspace provisioning, agent seeding, and event forwarding.
+ * Server-side client for the Automatos orchestrator's Shopify integration API.
+ *
+ * Endpoint contract: orchestrator/api/shopify.py
+ *   POST /api/shopify/provision   — workspace + agents + public widget API key (one call)
+ *   POST /api/shopify/connect     — store the merchant's Shopify access token
+ *   POST /api/shopify/sync        — shop/update webhook
+ *   POST /api/shopify/events      — orders/create + other webhooks
+ *   POST /api/shopify/deactivate  — app uninstall
+ *
+ * Auth: Bearer <AUTOMATOS_API_KEY> against SHOPIFY_INTERNAL_API_KEY on the
+ * orchestrator. Dev mode (no key configured server-side) accepts all calls.
  */
 
 const AUTOMATOS_API_URL = process.env.AUTOMATOS_API_URL || "https://api.automatos.app";
 const AUTOMATOS_API_KEY = process.env.AUTOMATOS_API_KEY || "";
 
-interface AutomatosWorkspace {
-  id: number;
+export interface ProvisionResponse {
+  id: string;
   public_id: string;
   name: string;
   api_key: string;
+  agents_installed: number;
+  is_new: boolean;
 }
 
-interface AgentSummary {
-  id: number;
-  name: string;
-  slug: string;
+export interface ConnectResponse {
+  status: "connected";
+  shop: string;
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
+export interface DeactivateResponse {
+  status: "deactivated" | "not_found";
+  workspace_id?: string;
+}
+
+export interface SyncResponse {
+  status: "synced" | "not_found";
+}
+
+export interface EventResponse {
+  status: "received";
+  event: string;
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${AUTOMATOS_API_URL}${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${AUTOMATOS_API_KEY}`,
+      ...(AUTOMATOS_API_KEY ? { Authorization: `Bearer ${AUTOMATOS_API_KEY}` } : {}),
       ...options.headers,
     },
   });
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Automatos API error ${res.status}: ${body}`);
+    throw new Error(`Automatos API error ${res.status} on ${path}: ${body}`);
   }
 
   return res.json() as Promise<T>;
@@ -45,11 +66,15 @@ async function request<T>(
 
 export const automatosClient = {
   /**
-   * Provision a new Automatos workspace for a Shopify store.
-   * Called on first install — idempotent via shop domain.
+   * Provision an Automatos workspace for a Shopify store.
+   * Idempotent on shop domain. Single call creates the workspace,
+   * clones the Shopify marketplace agents, and mints a public widget API key.
    */
-  async provisionWorkspace(shop: string, shopData: Record<string, unknown>): Promise<AutomatosWorkspace> {
-    return request<AutomatosWorkspace>("/api/workspaces/provision", {
+  async provisionWorkspace(
+    shop: string,
+    shopData: Record<string, unknown>,
+  ): Promise<ProvisionResponse> {
+    return request<ProvisionResponse>("/api/shopify/provision", {
       method: "POST",
       body: JSON.stringify({
         source: "shopify",
@@ -60,44 +85,23 @@ export const automatosClient = {
           plan: shopData.plan_name,
           country: shopData.country_code,
           currency: shopData.currency,
+          is_dev: shopData.is_dev,
+          domain: shopData.domain,
+          email: shopData.email,
         },
       }),
     });
   },
 
   /**
-   * Install marketplace agents into the workspace.
-   * Seeds the 12 Shopify agents from marketplace catalog.
-   */
-  async seedAgents(workspaceId: number): Promise<AgentSummary[]> {
-    return request<AgentSummary[]>(`/api/workspaces/${workspaceId}/agents/seed`, {
-      method: "POST",
-      body: JSON.stringify({
-        catalog: "shopify",
-        agents: [
-          "shopify-ops",
-          "shopify-support",
-          "shopify-product-expert",
-          "shopify-merchandiser",
-          "shopify-review-analyst",
-          "shopify-gift-concierge",
-          "shopify-seo-content",
-          "shopify-business-analyst",
-          "shopify-inventory-watchdog",
-        ],
-      }),
-    });
-  },
-
-  /**
-   * Store the Shopify access token for Composio connection.
+   * Store the Shopify access token so Composio can use it for Admin API calls.
    */
   async storeShopifyCredentials(
-    workspaceId: number,
+    workspaceId: string,
     shop: string,
-    accessToken: string
-  ): Promise<void> {
-    await request("/api/integrations/shopify/connect", {
+    accessToken: string,
+  ): Promise<ConnectResponse> {
+    return request<ConnectResponse>("/api/shopify/connect", {
       method: "POST",
       body: JSON.stringify({
         workspace_id: workspaceId,
@@ -108,55 +112,43 @@ export const automatosClient = {
   },
 
   /**
-   * Handle shop uninstall — deactivate workspace.
+   * Soft-delete the workspace on app uninstall.
+   * Errors are logged but never thrown — webhook handlers must not retry on auth failure.
    */
   async onShopUninstall(shop: string): Promise<void> {
-    await request("/api/workspaces/deactivate", {
+    await request<DeactivateResponse>("/api/shopify/deactivate", {
       method: "POST",
       body: JSON.stringify({ external_id: shop, source: "shopify" }),
     }).catch((err) => {
-      console.error(`Failed to deactivate workspace for ${shop}:`, err);
+      console.error(`[automatos] deactivate failed for ${shop}:`, err);
     });
   },
 
   /**
-   * Sync shop data changes.
+   * Sync shop metadata changes (shop/update webhook).
    */
   async syncShopData(shop: string, payload: unknown): Promise<void> {
-    await request("/api/integrations/shopify/sync", {
+    await request<SyncResponse>("/api/shopify/sync", {
       method: "POST",
       body: JSON.stringify({ shop, data: payload }),
     }).catch((err) => {
-      console.error(`Failed to sync shop data for ${shop}:`, err);
+      console.error(`[automatos] sync failed for ${shop}:`, err);
     });
   },
 
   /**
-   * Forward new order for agent context enrichment.
+   * Forward a Shopify webhook event for agent context.
    */
-  async onOrderCreate(shop: string, payload: unknown): Promise<void> {
-    await request("/api/integrations/shopify/events", {
+  async onShopifyEvent(
+    shop: string,
+    event: string,
+    payload: unknown,
+  ): Promise<void> {
+    await request<EventResponse>("/api/shopify/events", {
       method: "POST",
-      body: JSON.stringify({ shop, event: "orders/create", data: payload }),
+      body: JSON.stringify({ shop, event, data: payload }),
     }).catch((err) => {
-      console.error(`Failed to forward order event for ${shop}:`, err);
+      console.error(`[automatos] event ${event} failed for ${shop}:`, err);
     });
-  },
-
-  /**
-   * Get widget configuration for a shop.
-   */
-  async getWidgetConfig(workspaceId: number): Promise<Record<string, unknown>> {
-    return request(`/api/workspaces/${workspaceId}/widgets/config`);
-  },
-
-  /**
-   * Get the public API key for widget initialization.
-   */
-  async getPublicApiKey(workspaceId: number): Promise<string> {
-    const result = await request<{ api_key: string }>(
-      `/api/workspaces/${workspaceId}/api-keys/public`
-    );
-    return result.api_key;
   },
 };
