@@ -23,6 +23,8 @@ Confirm the prerequisites are in place. If any of these are missing, fix that fi
 
 ## 1. Install the Partner app on the merchant's store
 
+> **First-time installer?** Read `docs/SHOPIFY/SETUP-GUIDE.md § "Install flow walkthrough"` first. It walks through what `npm run dev` does at every step, where the safe abort points are, and what does/doesn't happen on the live storefront. ~5 min read; saves you from the "what's about to happen?" anxiety on a client live install.
+
 Two paths — pick one:
 
 ### 1a. Partner Dashboard test install (PoC / dev stores)
