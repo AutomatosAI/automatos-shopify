@@ -75,51 +75,29 @@ The endpoint is idempotent on `shopify_domain`. If you re-run it, the same works
 
 ## 3. Wire up Composio for this merchant
 
-> ⚠️ **One auth config per merchant `client_id`.** Each merchant's Partner app has its own `client_id` (per the per-client app model in §1), and Composio binds an auth config to a specific `client_id`. **You cannot reuse `ac_iOROGtpG6qVR` (the 1lovefragrance PoC config) across merchants.** Run `composio-setup.mjs` for each new merchant to mint their own.
-
-### 3a. Create the merchant's Composio auth config
-
-Update `.env.local` with the merchant's Partner app credentials (from their Dev Dashboard → Apps → automatos-ai → Settings):
+Update `.env.local` at the repo root:
 
 ```bash
-COMPOSIO_API_KEY=ak_...                                  # shared
-SHOPIFY_CLIENT_ID=<merchant Partner app client_id>       # per-merchant
-SHOPIFY_CLIENT_SECRET=<merchant Partner app client_secret>
-SHOPIFY_DEV_STORE=<merchant subdomain>                   # e.g. "innobuilduk"
-COMPOSIO_ENTITY_ID=<workspace.public_id>                 # UUID from step 2
+COMPOSIO_API_KEY=ak_...                  # already set (shared)
+SHOPIFY_DEV_STORE=<merchant-subdomain>   # e.g. "innobuilduk" — no .myshopify.com
+COMPOSIO_ENTITY_ID=<workspace.public_id> # UUID from step 2
 ```
 
-Then:
+Then run:
 
 ```bash
 nvm use
-node --env-file=.env.local scripts/composio-setup.mjs
-```
-
-It will create the auth config, run the OAuth flow, smoke-test, and print the new `auth_config_id` (format `ac_*`). Save it.
-
-### 3b. Wire the auth_config_id into the resume script env
-
-```bash
-echo "AUTH_CONFIG_ID=ac_<merchant-auth-config-id>" >> .env.local
-```
-
-(Without `AUTH_CONFIG_ID` set, the script falls back to the 1lovefragrance config — which won't authorise for any other merchant.)
-
-### 3c. Run the per-merchant connection (only needed if you want a fresh connection without re-creating the auth config)
-
-```bash
 node --env-file=.env.local scripts/composio-resume.mjs
 ```
 
-The script:
-1. Initiates a Composio connection against the merchant's auth config (from `AUTH_CONFIG_ID` env)
-2. Prints an authorize URL — open it, click **Install app** on Shopify
-3. Polls until ACTIVE (10 min window)
-4. Smoke-tests with `SHOPIFY_GET_SHOP_DETAILS` + `SHOPIFY_COUNT_PRODUCTS`
-5. Prints the final `connected_account` ID (`ca_*`)
+The script will:
+1. Initiate a Composio connection against the shared auth config `ac_iOROGtpG6qVR`
+2. Print an authorize URL — open it, click **Install app** on Shopify
+3. Poll until ACTIVE (10 min window)
+4. Smoke-test with `SHOPIFY_GET_SHOP_DETAILS` and `SHOPIFY_COUNT_PRODUCTS`
+5. Print the final `connected_account` ID
 
-Record `auth_config_id`, `connected_account_id`, and `entity_id` in `docs/SHOPIFY/CLIENTS.md`.
+Record the `connected_account_id` (`ca_*`) against the merchant — both in Composio dashboard and in `docs/SHOPIFY/CLIENTS.md`.
 
 If you hit errors here, the troubleshooting matrix lives at the bottom of `docs/SHOPIFY/COMPOSIO-SHOPIFY-SETUP.md`.
 

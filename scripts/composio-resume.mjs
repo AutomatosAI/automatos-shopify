@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 /**
  * Per-merchant Composio connection: initiate fresh connection against the
- * merchant's auth config, poll for ACTIVE, smoke-test with read-only tools.
+ * shared Shopify auth config, poll for ACTIVE, smoke-test with read-only tools.
  *
  * Required env (.env.local):
  *   COMPOSIO_API_KEY      ak_*
- *   AUTH_CONFIG_ID        ac_*  — per-merchant auth config (from composio-setup.mjs).
- *                                 Falls back to ac_iOROGtpG6qVR (1lovefragrance) if unset.
  *   SHOPIFY_DEV_STORE     subdomain only, no .myshopify.com (e.g. "innobuilduk")
  *   COMPOSIO_ENTITY_ID    workspace public_id from /api/shopify/provision
  *
@@ -14,22 +12,14 @@
  *   node --env-file=.env.local scripts/composio-resume.mjs
  *
  * Toolkit version pinned per gotcha #1 in docs/SHOPIFY/COMPOSIO-SHOPIFY-SETUP.md.
- * Per-merchant auth config requirement per gotcha #9.
  */
 
 import { Composio } from "@composio/core";
 
+const AUTH_CONFIG_ID = "ac_iOROGtpG6qVR";
 const TOOLKIT_VERSION = "20260414_00";
-const FALLBACK_AUTH_CONFIG_ID = "ac_iOROGtpG6qVR"; // 1lovefragrance PoC
 
-const {
-  COMPOSIO_API_KEY,
-  AUTH_CONFIG_ID,
-  SHOPIFY_DEV_STORE,
-  COMPOSIO_ENTITY_ID,
-} = process.env;
-
-const authConfigId = AUTH_CONFIG_ID || FALLBACK_AUTH_CONFIG_ID;
+const { COMPOSIO_API_KEY, SHOPIFY_DEV_STORE, COMPOSIO_ENTITY_ID } = process.env;
 
 for (const [k, v] of Object.entries({
   COMPOSIO_API_KEY,
@@ -42,13 +32,6 @@ for (const [k, v] of Object.entries({
   }
 }
 
-if (!AUTH_CONFIG_ID) {
-  console.warn(
-    `⚠️  AUTH_CONFIG_ID not set — falling back to ${FALLBACK_AUTH_CONFIG_ID} (1lovefragrance PoC). ` +
-      `Per-merchant onboarding should set AUTH_CONFIG_ID to the merchant's own ac_* from composio-setup.mjs.`,
-  );
-}
-
 const composio = new Composio({
   apiKey: COMPOSIO_API_KEY,
   toolkitVersions: { shopify: TOOLKIT_VERSION },
@@ -59,10 +42,9 @@ const divider = (l) =>
 
 async function main() {
   divider("1. Initiate fresh connection");
-  console.log(`Auth config: ${authConfigId}`);
   const connection = await composio.connectedAccounts.initiate(
     COMPOSIO_ENTITY_ID,
-    authConfigId,
+    AUTH_CONFIG_ID,
     {
       config: {
         authScheme: "OAUTH2",
@@ -144,7 +126,7 @@ async function main() {
   }
 
   divider("DONE 🎉");
-  console.log(`auth_config_id:    ${authConfigId}`);
+  console.log(`auth_config_id:    ${AUTH_CONFIG_ID}`);
   console.log(`connected_account: ${active.id}`);
   console.log(`entity_id:         ${COMPOSIO_ENTITY_ID}`);
   console.log(`shop:              ${SHOPIFY_DEV_STORE}.myshopify.com`);

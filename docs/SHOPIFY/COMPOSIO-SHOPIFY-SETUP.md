@@ -10,11 +10,9 @@
 
 ## Architecture in one paragraph
 
-**One Composio auth config per Shopify Partner app `client_id`** → each merchant gets their own **connected account** via OAuth → Automatos agents call Composio tools referencing the connected account's entity ID → Composio executes against the merchant's store using the stored per-merchant access token.
+One Composio **auth config** (single Shopify OAuth app, shared across all merchants) → each merchant gets their own **connected account** via OAuth → Automatos agents call Composio tools referencing the connected account's entity ID → Composio executes against the merchant's store using the stored per-merchant access token.
 
-> ⚠️ **Per-client app model (post-2026-05).** Originally we ran one shared `client_id` for all merchants. After running into Shopify's cross-org install constraints, the working pattern shifted to **one Partner app per merchant org** (each app gets created inside the merchant's own Dev Dashboard via `shopify app config link`). That means each merchant's app has its own `client_id`, which means **each merchant needs its own Composio auth config** — they can't share `ac_iOROGtpG6qVR`. See `docs/SHOPIFY/SETUP-GUIDE.md § "Per-client install workflow"` for the install pattern this implies.
-
-You do Steps 1–2 **once per merchant org** (whenever a new Partner app is created in their Dev Dashboard). You do Steps 3–5 **once per merchant store** within that org.
+You do Steps 1–2 **once** (or infrequently). You do Steps 3–5 **once per merchant**.
 
 ---
 
@@ -41,7 +39,7 @@ Go to Shopify Partner Dashboard → Apps → your app → **Configuration**.
 
 ### 1b. Access → Use legacy install flow
 
-> ⚠️ **Updated 2026-04-23.** Originally this had to be CHECKED for Composio compatibility. We removed it (commit `8097891 fix(shopify): unblock app deploy`) because it's incompatible with app-specific webhooks (`[[webhooks.subscriptions]]`). Composio's OAuth callback now works without it — leave **UNCHECKED**, and ensure all webhook subscriptions are app-scoped, not shop-scoped.
+**CHECK THIS BOX.** Composio requires the traditional OAuth flow, not Shopify's Managed Installation.
 
 ### 1c. Access → Redirect URLs
 
@@ -65,25 +63,17 @@ https://backend.composio.dev/api/v3/toolkits/auth/callback,https://backend.compo
 
 ---
 
-## Step 2 — Create the Composio Auth Config (per merchant org, programmatic)
+## Step 2 — Create the Composio Auth Config (one-time, programmatic)
 
 **Do NOT use the Composio dashboard UI.** The UI only exposes 4 Shopify scopes (products + orders read/write). Programmatic creation accepts the full scope list.
 
-> ⚠️ **One auth config per merchant `client_id`.** Each merchant's Partner app (created inside their own Dev Dashboard) has its own `client_id`. The Composio auth config binds OAuth credentials to one specific `client_id`, so you create one auth config per merchant. **Do not reuse `ac_iOROGtpG6qVR` across merchants** — that one is bound to the original PoC app and won't authorise for other merchants' apps.
-
-### 2a. Update `.env.local` for the merchant you're onboarding
-
-Each run targets one merchant. Update `.env.local` with that merchant's Partner app credentials:
+### 2a. Create `.env.local` at the repo root
 
 ```bash
-COMPOSIO_API_KEY=ak_...                          # shared across all merchants
-SHOPIFY_CLIENT_ID=<merchant Partner app client_id>     # per-merchant
-SHOPIFY_CLIENT_SECRET=<merchant Partner app client_secret>  # per-merchant
-SHOPIFY_DEV_STORE=<merchant store handle>        # per-merchant, e.g. "innobuilduk"
-COMPOSIO_ENTITY_ID=<merchant workspace public_id>      # per-merchant
+COMPOSIO_API_KEY=ak_...
+SHOPIFY_CLIENT_ID=<your Partner app client_id>
+SHOPIFY_CLIENT_SECRET=<your Partner app client_secret>
 ```
-
-The merchant's `client_id` and `client_secret` come from their Dev Dashboard → Apps → automatos-ai → Settings page.
 
 (`.env.local` is already in `.gitignore`.)
 
@@ -98,30 +88,24 @@ node --env-file=.env.local scripts/composio-setup.mjs
 
 The script will:
 1. Introspect the Shopify OAuth2 schema (confirms `scopes` is accepted).
-2. Create a custom auth config with `type: "use_custom_auth"`, full scope list, the merchant's OAuth credentials.
+2. Create a custom auth config with `type: "use_custom_auth"`, full 30+ scope list, your OAuth credentials.
 3. Print the new `auth_config_id` (format: `ac_...`).
 
-**Record the `auth_config_id` against the merchant** in `docs/SHOPIFY/CLIENTS.md`.
+**Record the `auth_config_id`.** It's what Automatos uses for every merchant going forward.
 
 Example output:
 ```
 Auth config: {
-  "id": "ac_<unique-per-merchant>",
+  "id": "ac_iOROGtpG6qVR",
   "authScheme": "OAUTH2",
   "isComposioManaged": false,
   "toolkit": "shopify"
 }
 ```
 
-### 2c. Wire the auth_config_id into the orchestrator (or pass via env)
+### 2c. Wire the auth_config_id into the orchestrator
 
-The per-merchant `auth_config_id` is needed by `scripts/composio-resume.mjs` when initiating the connection. The script reads `AUTH_CONFIG_ID` from `.env.local` — append it after step 2b:
-
-```bash
-echo "AUTH_CONFIG_ID=ac_<merchant-auth-config-id>" >> .env.local
-```
-
-(Older repo state hardcoded `ac_iOROGtpG6qVR` in the script; the script now reads from env so per-merchant onboarding doesn't require a code edit.)
+In Automatos orchestrator, replace any old/stale Shopify auth config ID with the new one. The orchestrator uses this ID when initiating new merchant connections.
 
 ---
 
@@ -214,8 +198,8 @@ The Composio dashboard UI for Shopify auth config creation only offers 4 scopes 
 ### 3. Both v1 and v3 redirect URLs required on Shopify
 Composio's actual OAuth callback is `.../api/v1/auth-apps/add`. Their public docs reference `.../api/v3/toolkits/auth/callback`. **Add both to the Partner app redirect allow list** or OAuth will fail with `redirect_uri not whitelisted`.
 
-### 4. "Use legacy install flow" — superseded
-**Originally** this had to be CHECKED. We removed it on 2026-04-23 (`8097891 fix(shopify): unblock app deploy`) because it's incompatible with `[[webhooks.subscriptions]]` (app-specific webhooks). Composio's OAuth callback works without it as long as your app uses app-specific webhooks throughout. Do NOT re-enable.
+### 4. "Use legacy install flow" must be checked
+Unchecked = Shopify Managed Installation, which does NOT work with Composio's OAuth flow. Composio needs the traditional flow.
 
 ### 5. Partner App changes require a new release
 Saving the Shopify Partner App config does nothing until you also cut a new release. If OAuth errors persist after "saving", check that your release is current.
@@ -229,29 +213,17 @@ The scopes baked into the auth config are what Shopify asks the merchant to appr
 ### 8. Composio Shopify toolkit is NOT composio-managed
 `isComposioManaged: false` on the auth config is expected. This is why you need your own Partner app OAuth credentials — Composio doesn't ship a default Shopify OAuth app.
 
-### 9. Per-client auth configs are mandatory under the per-merchant Partner app model
-Each merchant's Partner app has a unique `client_id` (since each is created inside their own Dev Dashboard, not in a shared Partner Dashboard org). Composio binds an auth config to one `client_id` at creation time. **You cannot reuse one auth config across merchants** — Composio's OAuth handshake will fail with credential mismatch. Run `scripts/composio-setup.mjs` against each merchant's credentials and record the resulting `ac_*` ID per row in `docs/SHOPIFY/CLIENTS.md`.
-
-### 10. Tool slugs differ from intuitive names
-Naive guesses like `SHOPIFY_LIST_PRODUCTS` will 404. The verified slugs we use:
-- `SHOPIFY_GET_SHOP_DETAILS` — shop metadata (smoke test)
-- `SHOPIFY_COUNT_PRODUCTS` — product count (smoke test)
-- `SHOPIFY_GET_PRODUCTS_LIST` — list products (correct slug for what most people would call "list products")
-
-To enumerate the full set when slugs change: `composio.tools.getRawComposioTools({ toolkits: ["shopify"], limit: 400 })`.
-
 ---
 
-## Quick reference — per-merchant IDs
+## Quick reference — IDs for the 1lovefragrance PoC
 
-Recorded one row per merchant. See `docs/SHOPIFY/CLIENTS.md` for the canonical registry.
-
-| Merchant | client_id | auth_config_id | connected_account | entity_id |
-|---|---|---|---|---|
-| 1lovefragrance.myshopify.com | `f184b73f2d841c1972744565325d3548` | `ac_iOROGtpG6qVR` | `ca_hV499ZT66IGB` | `c71e4753-97ad-4d52-bfa0-f2a90c0a384b` |
-| innobuilduk.myshopify.com | `45e95118e2a94a53ac44ce9ccf494836` | _(create via Step 2)_ | _(create via Step 3)_ | _(workspace public_id from `/api/shopify/provision`)_ |
-
-Toolkit version (shared): `20260414_00` — pin globally on the Composio client. Update if Composio bumps it.
+```
+auth_config_id:     ac_iOROGtpG6qVR
+connected_account:  ca_hV499ZT66IGB
+entity_id:          c71e4753-97ad-4d52-bfa0-f2a90c0a384b
+shop:               1lovefragrance.myshopify.com
+toolkit_version:    20260414_00
+```
 
 ---
 
