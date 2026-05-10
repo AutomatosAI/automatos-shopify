@@ -45,7 +45,10 @@ const FULL_SCOPES = [
   "read_locations",
 ].join(",");
 
-const composio = new Composio({ apiKey: COMPOSIO_API_KEY });
+const composio = new Composio({
+  apiKey: COMPOSIO_API_KEY,
+  toolkitVersions: { shopify: "20260414_00" },
+});
 
 const divider = (label) =>
   console.log(`\n─── ${label} ${"─".repeat(Math.max(0, 60 - label.length))}`);
@@ -121,12 +124,17 @@ async function main() {
   }
 
   // 6. Smoke test
-  divider("6. Smoke test: SHOPIFY_LIST_PRODUCTS");
-  const result = await composio.tools.execute("SHOPIFY_LIST_PRODUCTS", {
+  divider("6. Smoke test: SHOPIFY_GET_SHOP_DETAILS + SHOPIFY_COUNT_PRODUCTS");
+  const shopDetails = await composio.tools.execute("SHOPIFY_GET_SHOP_DETAILS", {
     userId: COMPOSIO_ENTITY_ID,
-    arguments: { limit: 3 },
+    arguments: {},
   });
-  console.log("Result:", JSON.stringify(result, null, 2));
+  console.log("Shop details:", JSON.stringify(shopDetails, null, 2));
+  const productCount = await composio.tools.execute("SHOPIFY_COUNT_PRODUCTS", {
+    userId: COMPOSIO_ENTITY_ID,
+    arguments: {},
+  });
+  console.log("Product count:", JSON.stringify(productCount, null, 2));
 
   divider("DONE");
   console.log(`auth_config_id:    ${authConfig.id}`);

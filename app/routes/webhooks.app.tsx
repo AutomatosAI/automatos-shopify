@@ -26,8 +26,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       break;
 
     case "ORDERS_CREATE":
-      // Feed new orders to Automatos for agent context
-      await automatosClient.onOrderCreate(shop, payload);
+      await automatosClient.onShopifyEvent(shop, "orders/create", payload);
       break;
 
     case "CUSTOMERS_DATA_REQUEST":

@@ -1,22 +1,44 @@
 #!/usr/bin/env node
 /**
- * Resume: reuse existing auth config, start fresh connection, poll, smoke test.
+ * Per-merchant Composio connection: initiate fresh connection against the
+ * shared Shopify auth config, poll for ACTIVE, smoke-test with read-only tools.
  *
- * Usage: node --env-file=.env.local scripts/composio-resume.mjs
+ * Required env (.env.local):
+ *   COMPOSIO_API_KEY      ak_*
+ *   SHOPIFY_DEV_STORE     subdomain only, no .myshopify.com (e.g. "innobuilduk")
+ *   COMPOSIO_ENTITY_ID    workspace public_id from /api/shopify/provision
+ *
+ * Usage:
+ *   node --env-file=.env.local scripts/composio-resume.mjs
+ *
+ * Toolkit version pinned per gotcha #1 in docs/SHOPIFY/COMPOSIO-SHOPIFY-SETUP.md.
  */
 
 import { Composio } from "@composio/core";
 
 const AUTH_CONFIG_ID = "ac_iOROGtpG6qVR";
-const {
+const TOOLKIT_VERSION = "20260414_00";
+
+const { COMPOSIO_API_KEY, SHOPIFY_DEV_STORE, COMPOSIO_ENTITY_ID } = process.env;
+
+for (const [k, v] of Object.entries({
   COMPOSIO_API_KEY,
   SHOPIFY_DEV_STORE,
   COMPOSIO_ENTITY_ID,
-} = process.env;
+})) {
+  if (!v) {
+    console.error(`MISSING ENV: ${k}`);
+    process.exit(1);
+  }
+}
 
-const composio = new Composio({ apiKey: COMPOSIO_API_KEY });
+const composio = new Composio({
+  apiKey: COMPOSIO_API_KEY,
+  toolkitVersions: { shopify: TOOLKIT_VERSION },
+});
 
-const divider = (l) => console.log(`\n─── ${l} ${"─".repeat(Math.max(0, 60 - l.length))}`);
+const divider = (l) =>
+  console.log(`\n─── ${l} ${"─".repeat(Math.max(0, 60 - l.length))}`);
 
 async function main() {
   divider("1. Initiate fresh connection");
@@ -28,14 +50,16 @@ async function main() {
         authScheme: "OAUTH2",
         val: { shop: SHOPIFY_DEV_STORE },
       },
-    }
+    },
   );
   console.log(JSON.stringify(connection, null, 2));
 
   divider("2. Authorize");
   const url = connection.redirectUrl || connection.redirect_url;
   console.log(`\n🔗 OPEN THIS URL NOW:\n\n   ${url}\n`);
-  console.log("After Shopify install + approve, this script will detect ACTIVE and smoke-test.\n");
+  console.log(
+    "After Shopify install + approve, this script detects ACTIVE and smoke-tests.\n",
+  );
 
   console.log("Polling every 3s (10 min window)...");
   const deadline = Date.now() + 10 * 60 * 1000;
@@ -46,7 +70,9 @@ async function main() {
     try {
       const status = await composio.connectedAccounts.get(connection.id);
       if (status.status !== lastStatus) {
-        console.log(`  [${new Date().toISOString().slice(11, 19)}] status=${status.status}`);
+        console.log(
+          `  [${new Date().toISOString().slice(11, 19)}] status=${status.status}`,
+        );
         lastStatus = status.status;
       } else {
         process.stdout.write(".");
@@ -71,16 +97,30 @@ async function main() {
     process.exit(1);
   }
 
-  divider("3. Smoke test: SHOPIFY_LIST_PRODUCTS");
+  divider("3a. Smoke test: SHOPIFY_GET_SHOP_DETAILS");
   try {
-    const result = await composio.tools.execute("SHOPIFY_LIST_PRODUCTS", {
-      userId: COMPOSIO_ENTITY_ID,
-      arguments: { limit: 3 },
-    });
-    console.log("✅ Tool call succeeded");
-    console.log(JSON.stringify(result, null, 2));
+    const shopDetails = await composio.tools.execute(
+      "SHOPIFY_GET_SHOP_DETAILS",
+      { userId: COMPOSIO_ENTITY_ID, arguments: {} },
+    );
+    console.log("✅ shop details OK");
+    console.log(JSON.stringify(shopDetails, null, 2));
   } catch (err) {
-    console.error("❌ Tool call failed:", err?.message || err);
+    console.error("❌ SHOPIFY_GET_SHOP_DETAILS failed:", err?.message || err);
+    console.error("Full:", err);
+    process.exit(1);
+  }
+
+  divider("3b. Smoke test: SHOPIFY_COUNT_PRODUCTS");
+  try {
+    const productCount = await composio.tools.execute(
+      "SHOPIFY_COUNT_PRODUCTS",
+      { userId: COMPOSIO_ENTITY_ID, arguments: {} },
+    );
+    console.log("✅ product count OK");
+    console.log(JSON.stringify(productCount, null, 2));
+  } catch (err) {
+    console.error("❌ SHOPIFY_COUNT_PRODUCTS failed:", err?.message || err);
     console.error("Full:", err);
     process.exit(1);
   }
@@ -90,6 +130,7 @@ async function main() {
   console.log(`connected_account: ${active.id}`);
   console.log(`entity_id:         ${COMPOSIO_ENTITY_ID}`);
   console.log(`shop:              ${SHOPIFY_DEV_STORE}.myshopify.com`);
+  console.log(`toolkit_version:   ${TOOLKIT_VERSION}`);
 }
 
 main().catch((err) => {
