@@ -139,75 +139,97 @@ In the Shopify admin, open the Automatos app. You should see:
 
 ---
 
-## Install flow walkthrough — what `npm run dev` actually does
+## Per-client install workflow (the working pattern)
 
-When you're about to install on a client's live store and want to know exactly what's touching what, this is the play-by-play. Each step is annotated with **what gets changed where** and **how to safely abort**.
+This is the simplest and most reliable way to install the Automatos Partner app on a new merchant. **Each merchant has their own copy of the `automatos-ai` app inside their own Dev Dashboard**. The master `shopify.app.toml` in this repo is the canonical scopes + extension definition; per-client tomls (`shopify.app.<client>.toml`) get derived from it.
 
-### Local-only — nothing on Shopify yet
+This pattern was proven on `1lovefragrance` and re-validated on INBUILD UK.
 
-1. **Vite dev server boots** on your machine. Your local app is now reachable at `http://localhost:<port>`. Nothing leaves your machine.
-2. **Cloudflare tunnel opens.** Shopify CLI registers a temporary HTTPS endpoint (e.g. `https://abc-def.trycloudflare.com`) that proxies to your local server. Tunnel exists only while the CLI is running. Still no Shopify-side changes.
+### Why this and not `shopify app dev`?
 
-### Partner app config gets touched (your account, not any merchant)
+`shopify app dev` (Cloudflare tunnel mode) is for **YOUR own local development** of the Shopify app — iterating on `auth.callback.tsx`, embedded admin routes, webhook handlers, against a dev store you own. It's the wrong tool for client installs:
 
-3. **Partner app URL temporarily updated.** The CLI updates your Partner app's `application_url` and redirect URLs to the tunnel URL. Affects YOUR Partner Dashboard config only — no merchant store has been notified or modified. Reversible: when you stop the CLI, you can run `shopify app config push` to restore the canonical URLs from `shopify.app.toml` (or just leave it; the next dev session overwrites again).
+- The tunnel is temporary; dies when you stop the CLI
+- It requires the target store to be a dev store of the Partner org owning the app — won't install cross-org
+- It updates the Partner app URL globally, affecting any other in-flight install
 
-### Install URL printed, decision pending
+For client installs, use the deploy-based flow below.
 
-4. **CLI prints an install URL.** Looks like `https://<store>.myshopify.com/admin/oauth/authorize?client_id=...&scope=...&redirect_uri=...`. **Nothing is installed yet.** This URL is just an offer to install.
-5. **You decide what to do.** Three options:
-   - Paste in the merchant admin yourself → triggers step 6
-   - Share the URL with the merchant → they click → triggers step 6
-   - Close the terminal / `Ctrl+C` → tunnel dies, URL becomes invalid, no merchant impact
+### Steps
 
-### Click happens — Shopify takes over
+```bash
+# 1. Link this repo to the merchant's Dev Dashboard app
+shopify app config link
+#    - Pick organization → merchant's Dev Dashboard org (e.g. "INBUILD UK")
+#    - Pick app → existing automatos-ai if one exists, otherwise create new
+#    - Pick config name → e.g. "automatos-ai"
+#    Result: shopify.app.<config-name>.toml is written, linked to merchant's client_id.
+#    Scopes (140) are auto-populated from the master shopify.app.toml.
 
-6. **Shopify's scope approval screen** appears in the merchant's admin. Lists every scope the app requests (currently 34). The clicker can:
-   - **Cancel** → walks away clean, no install
-   - **Install app** → proceeds
-7. **OAuth grant created.** Shopify generates an access token internally and redirects the browser to your tunnel's `/auth/callback?code=...&hmac=...&shop=...`.
-8. **Local `auth.callback.tsx` runs** (in your tunnelled local server). It:
-   - Fetches shop metadata via Shopify GraphQL
-   - Calls `POST /api/shopify/provision` on the orchestrator → workspace created, agents cloned, public widget API key minted
-   - Calls `POST /api/shopify/connect` → stores the merchant's Shopify access token in the workspace settings
-   - Logs `[automatos] provisioned <shop>: workspace=<UUID> agents=9 is_new=true key_prefix=ak_pub_xxxx...`
-   - Redirects to the embedded app's `/app` route
-9. **Merchant lands on the embedded app** in their Shopify admin under Apps → Automatos AI.
+# 2. Hand-copy missing config from shopify.app.toml into the new toml:
+#    - [webhooks] block + [[webhooks.subscriptions]]  (GDPR + app/uninstalled + orders/create + shop/update)
+#    - [auth] redirect_urls  (Composio backend URLs — only if Composio is in scope for this client)
+#    - application_url  (point at deployed Shopify app server if embedded admin is needed; otherwise leave the placeholder)
+
+# 3. Deploy to the merchant's app
+shopify app deploy
+#    Pushes scopes, webhooks, theme extension (chat-widget, product-qa, blog-widget, review-summary).
+#    Creates a new "version" in the merchant's Dev Dashboard.
+
+# 4. Install on the merchant's store via Dev Dashboard
+#    dev.shopify.com/dashboard/<merchant-org-id>/apps/automatos-ai
+#    → Click "Install app"
+#    → Pick target store (e.g. innobuilduk.myshopify.com)
+#    → Approve scope screen
+#    Result: app installed; theme extension available in merchant's Theme customizer.
+
+# 5. Mint the Automatos workspace + public widget API key (out-of-band; install does not auto-trigger this)
+curl -X POST https://api.automatos.app/api/shopify/provision \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "shopify",
+    "external_id": "<store>.myshopify.com",
+    "name": "<Merchant Name>",
+    "metadata": {"shopify_domain": "<store>.myshopify.com"}
+  }'
+#    Response includes workspace public_id and api_key. Save both.
+
+# 6. Configure widget on the merchant's chosen theme
+#    Merchant admin → Online Store → Themes → <target theme> → Customize
+#    → Theme settings → App embeds → Automatos AI Widgets → toggle ON
+#    → Paste the api_key + agent_id from step 5
+#    → Save (do NOT publish if using an unpublished theme as a sandbox)
+
+# 7. Verify on theme preview URL
+#    - Open preview URL → confirm widget loads + chat responds
+#    - Open published storefront → confirm no widget renders (if using unpublished theme)
+
+# 8. Update docs/SHOPIFY/CLIENTS.md with the new merchant row.
+```
 
 ### What this does NOT do to the live storefront
 
-- **No widgets render anywhere yet.** The theme extension is installed but every widget is OFF by default in every theme. App embeds are an opt-in toggle, per-theme. Customers see no change.
-- **No webhooks fire on existing data.** Webhook subscriptions only fire on new events (e.g. an order placed *after* install). Existing orders, customers, products are not re-broadcast.
-- **No automated agent actions execute.** Agents are seeded into the workspace but only run when explicitly invoked (via the embedded admin or a widget conversation).
-- **The published theme is untouched.** Whatever's live for shoppers stays exactly as it was.
+- **No widgets render anywhere yet** after install. App embeds are OFF by default in every theme. The merchant has to explicitly toggle ON per theme.
+- **No webhooks fire on historical data.** Subscriptions only see new events post-install.
+- **No agent actions execute** until invoked via the embedded admin or a widget conversation.
+- **The published theme is untouched** unless you (or the merchant) explicitly toggle the Automatos embed ON inside it. Keep it OFF in published themes during demos.
 
-### Rollback at any point
+### Rollback
 
 | Stage | How to abort | Result |
 |---|---|---|
-| Steps 1–5 (before any click) | `Ctrl+C` the CLI | Tunnel dies, install URL invalid, zero merchant impact |
-| Step 6 (scope screen visible) | Click **Cancel** | No install, no traces, walk away |
-| After step 9 (app installed) | Merchant uninstalls via admin → Apps → Automatos AI → Uninstall | `app/uninstalled` webhook fires → orchestrator soft-deletes workspace. Theme extension files removed from store automatically. |
-| Live storefront protection | Never toggle the Automatos embed ON in the **published** theme. Only enable it in unpublished themes (e.g. "AI Testing"). | Real shoppers see zero Automatos activity. |
+| Before step 4 (no install yet) | Just stop. Nothing has touched the merchant's store. | Zero merchant impact. |
+| Step 4 scope screen visible | Click **Cancel** | No install, no traces. |
+| After step 4 (app installed) | Merchant admin → Apps → Automatos AI → Uninstall | `app/uninstalled` webhook fires → orchestrator soft-deletes workspace. Theme extension files removed from store. |
+| Live storefront protection | Toggle the Automatos embed ON only in unpublished themes (e.g. "AI Testing"). | Real shoppers see zero Automatos activity. |
 
-### Recommended sequence for a nervous first run
+### Gotchas / notes
 
-1. **Dry-run on your own dev store first.** ~10 min. Run `npm run dev`, click the install URL on YOUR dev store, watch what the CLI prints, see the scope screen, see the post-install redirect, see the API key in console. Zero stakes.
-2. **Then run on the client** with the same command. You already know what every screen is going to look like.
-
-### Common stop points that look scary but aren't
-
-- **CLI prompts to "select an organization"** — pick your Partner Dashboard org. One-time per machine.
-- **CLI prompts to "select a development store"** — for a *test* install (vs live), pick a dev store. To install on a live merchant store, use the install URL the CLI prints rather than the dev-store picker.
-- **"Use legacy install flow" warning** — if the Partner app hasn't been updated to the new install flow, this is normal. See `docs/SHOPIFY/COMPOSIO-SHOPIFY-SETUP.md` Gotcha #4.
-- **First call to `/api/shopify/provision` returns 422** in logs — usually means the request body is missing fields. Check `shopData` in `auth.callback.tsx` is being populated from the GraphQL response. (Only relevant if you see this; not a default failure mode.)
-
-### When `shopify app dev` is NOT the right tool
-
-- **Production / app-store distribution.** The tunnel is temporary. For permanent installs accessible to merchants without your laptop running, the app server needs to be deployed to a real host (Railway/fly.dev/etc) and `application_url` in `shopify.app.toml` must point at it.
-- **Multiple concurrent installs.** Only one tunnel per dev session. If you need to install on multiple stores in parallel, each needs its own session OR a deployed server.
-
-For the INBUILD UK PoC specifically, `shopify app dev` is sufficient — it's a one-off install we can babysit.
+- **Per-client tomls are local, not shared.** `shopify.app.<client>.toml` lives only in your repo clone. Treat as a local working file. Recommendation: add `shopify.app.*.toml` to `.gitignore` while keeping the master `shopify.app.toml` tracked.
+- **Each merchant's app has its own `client_id`.** From Shopify's POV they're separate apps. Composio auth configs are bound to a `client_id`, so each merchant needing Composio gets their own auth config (run `scripts/composio-setup.mjs` against each one).
+- **Placeholder `application_url`** (`https://shopify.dev/apps/default-app-home`) is fine for installs where you only need theme extension + widgets. The embedded admin won't render — that's only needed if the merchant clicks "Open app" inside their admin. For widget-only PoCs, leave the placeholder.
+- **`shopify app config link` only auto-syncs scopes.** Webhooks and redirect URLs are not copied — you have to hand-copy from `shopify.app.toml`. (Worth scripting in the future.)
+- **`shopify app deploy` against a per-client toml only affects that merchant's app.** Other merchants' apps are unaffected. Same goes for installs and webhooks.
 
 ---
 

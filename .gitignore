@@ -8,3 +8,9 @@ dist/
 .env.local
 .shopify/
 prisma/dev.sqlite
+
+# Per-client Partner app configs (linked locally via `shopify app config link`).
+# Each merchant has their own client_id; these tomls are not shared across clones.
+# The master shopify.app.toml is tracked; per-client variants are local-only.
+shopify.app.*.toml
+!shopify.app.toml
