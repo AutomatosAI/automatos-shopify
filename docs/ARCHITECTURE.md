@@ -2,7 +2,7 @@
 
 **Purpose:** single reference for how the pieces connect and what happens in each scenario. Every step is labelled so PRDs, tickets, and debugging conversations can cite `W3` or `I7` instead of re-describing the flow.
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-05-07
 
 ---
 
@@ -68,7 +68,7 @@ graph LR
 | `SA` | Admin GraphQL API | The real Shopify data plane (products, orders, customers) | — |
 | `SW` | Webhooks | Shopify → Automatos push (orders/create, shop/update, app/uninstalled, compliance) | 001 |
 | `APP` | Partner App | `automatos-shopify` React-Router embedded app on fly.dev | 001, 004 |
-| `CDN` | Widget CDN | `sdk.automatos.app` — S3 + CloudFront, serves `widget.js` | 003 |
+| `CDN` | Widget CDN | `widgets.automatos.app/v0` — S3 + CloudFront, serves `widget.js` | 003 |
 | `ORCH` | Orchestrator | Automatos backend — API endpoints, agent runtime, tool routing | 004, 006 |
 | `DB` | Postgres | Workspaces, api_keys, agents, conversations, audit log | 006 |
 | `REDIS` | Redis | Rate-limit token buckets, JWT revocation, session cache | 006 |
@@ -84,7 +84,7 @@ graph LR
 **Trigger:** merchant clicks "Add app" on the Shopify App Store listing.
 **Goal:** after this flow, the merchant has a workspace, 9 seeded agents, a stored Shopify access token, and a Composio connected_account — all without leaving Shopify admin.
 
-**Current status:** steps `I1–I7` are live. Step `I8` is the gap PRD-004 closes.
+**Current status:** steps `I1–I7` are live. Step `I8` (Composio token import) is the gap PRD-004 closes — still manual via `scripts/composio-resume.mjs` per merchant.
 
 ```mermaid
 sequenceDiagram
@@ -101,23 +101,23 @@ sequenceDiagram
   M->>SP: I3. Approve install
   SP->>APP: I4. OAuth callback w/ access_token + shop
   APP->>APP: I5. auth.callback.tsx — fetch shop metadata via GraphQL
-  APP->>ORCH: I6. POST /workspace — provisionWorkspace(shop, meta)
-  ORCH->>DB: I6a. UPSERT workspace (idempotent on shop domain)
-  APP->>ORCH: I7. POST /agents/seed — seedAgents(workspace.id)
-  ORCH->>DB: I7a. INSERT 9 seeded agents
-  APP->>ORCH: I8. POST /api/integrations/shopify/connect — storeShopifyCredentials
-  ORCH->>DB: I8a. Store access_token for direct Admin API fallback
-  ORCH->>COMP: I8b. Import token → connected_account  [PRD-004 gap]
-  COMP-->>ORCH: I8c. connected_account_id
-  ORCH->>DB: I8d. Save connected_account_id on workspace
-  ORCH-->>APP: I9. 200 OK w/ ids
-  APP->>M: I10. Redirect to /app — widgets + agents ready
+  APP->>ORCH: I6. POST /api/shopify/provision (workspace + agents + public api_key in one call)
+  ORCH->>DB: I6a. UPSERT workspace (idempotent on shopify_domain) + clone marketplace agents + mint public widget API key
+  ORCH-->>APP: I6b. {id, public_id, api_key, agents_installed, is_new}
+  APP->>ORCH: I7. POST /api/shopify/connect — storeShopifyCredentials
+  ORCH->>DB: I7a. Store access_token in workspace.settings.shopify_access_token
+  Note over APP,COMP: I8. Composio token import — currently MANUAL via scripts/composio-resume.mjs (PRD-004 gap)
+  ORCH->>COMP: I8a. [future] Import token → connected_account
+  COMP-->>ORCH: I8b. [future] connected_account_id
+  ORCH->>DB: I8c. [future] Save shopify_composio_connection_id on workspace
+  APP->>M: I9. Redirect to /app — embedded admin shell loads
 ```
 
 **Labels for conversation:**
 - `I4` — where Shopify hands us the merchant's access token
-- `I6` — workspace provisioning (open question: auto-provision vs link-existing — blocks PRD-004)
-- `I8b` — the ONE missing piece for single-flow install (tonight's spike found `.create()` doesn't exist; tomorrow probes `.link()` / `.update()`)
+- `I6` — single-call provision (workspace + agents + public widget API key bundled). Idempotent on `shopify_domain`; re-install regenerates the API key.
+- `I7` — token storage. Used by Composio (post-`I8`) and as a direct-Admin-API fallback.
+- `I8` — the one remaining manual step. Operator runs `scripts/composio-resume.mjs` with the merchant's `public_id` as `COMPOSIO_ENTITY_ID`. PRD-004 closes this gap by collapsing it into `I7`.
 
 ---
 
@@ -139,7 +139,7 @@ sequenceDiagram
   participant LLM as LLM provider
   participant VEC as Vector store
 
-  SH->>CDN: W1. GET /v1/widget.js (script tag)
+  SH->>CDN: W1. GET /v0/widget.js (script tag)
   CDN-->>SH: W2. widget.js (cached 1hr)
   SH->>SH: W3. AutomatosWidget.init() mounts Shadow DOM
   SH->>ORCH: W4. POST /api/widgets/session {ak_pub_*, origin}
