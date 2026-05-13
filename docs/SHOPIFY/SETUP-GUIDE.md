@@ -204,8 +204,93 @@ curl -X POST https://api.automatos.app/api/shopify/provision \
 #    - Open preview URL → confirm widget loads + chat responds
 #    - Open published storefront → confirm no widget renders (if using unpublished theme)
 
-# 8. Update docs/SHOPIFY/CLIENTS.md with the new merchant row.
+# 8. (Optional) Enable PRD-007 proactive engagement
+#    Default is OFF after provisioning. Flip on once merchant has approved
+#    the brand-voice opener. See "Proactive engagement activation" below.
+
+# 9. Update docs/SHOPIFY/CLIENTS.md with the new merchant row.
 ```
+
+---
+
+## Proactive engagement activation (PRD-007)
+
+**Merchant-facing path (recommended).** Three settings in the chat-widget theme
+block, ticked from the same place the merchant pasted their API key. No
+workspace IDs, no curl, no SQL.
+
+### What the merchant does (30 seconds)
+
+1. Merchant admin → **Online Store → Themes → [their theme] → Customize**.
+2. **App embeds** (sidebar) → **Automatos Support Chat**.
+3. Scroll to **Proactive engagement (beta)** section:
+
+   | Setting | Default | What it does |
+   |---|---|---|
+   | ☐ **Enable proactive popups** | off | Master switch. Off until ticked. |
+   | **Popup delay (seconds)** | 20 | How long the shopper sits on a product page before the popup appears. Range 5–120. |
+   | **Popup message** | "Need a hand finding the right product?" | Shown immediately while the agent generates a product-specific opener (which replaces it within ~1.5s). |
+
+4. Tick **Enable proactive popups**.
+5. **Save**.
+6. Storefront preview → product page → wait the configured delay → corner-bubble
+   popup appears with a contextual one-line opener referencing the product.
+
+That's it. Same theme-customizer flow the merchant already knows from pasting
+their API key. No backend access required.
+
+### How it works under the hood
+
+The theme block passes a `proactiveOverride` object to the SDK on init:
+
+```js
+proactiveOverride: {
+  enabled: true,        // from the checkbox
+  seconds: 20,          // from the range slider
+  message: "..."        // from the text input
+}
+```
+
+The SDK merges this with the workspace-level config (`workspace.settings.widget_proactive`):
+
+- **`enabled`** uses OR semantics — either source flipping it on fires the popup.
+- **`seconds`** and **`message`** from the theme win when supplied.
+- **All other tunables** (popup_style, page_types, frequency_cap, etc.) come from the workspace config (or hardcoded v1 defaults if no workspace config exists).
+
+This means platform admins can still adjust advanced behaviour per-merchant via the workspace settings (when the dashboard UI lands; for now via DB), while the merchant's day-to-day on/off control is a single checkbox in the theme.
+
+### Default config seeded into every new Shopify workspace
+
+Set by `POST /api/shopify/provision`:
+
+```jsonc
+{
+  "widget_proactive": {
+    "enabled": false,                          // opt-in
+    "page_types": ["product"],                 // fire on product pages only
+    "triggers": [{ "type": "time_on_page", "seconds": 20 }],
+    "frequency_cap": { "scope": "session", "max_pops": 1 },
+    "greeting_source": "agent_with_canned_fallback",
+    "canned_fallback": "Need a hand finding the right product?",
+    "agent_timeout_ms": 1500,                  // canned shown if LLM > 1.5s
+    "popup_style": "corner_bubble",
+    "respect_consent": true,                   // honour GDPR cookie consent
+    "dismissal_persistence": "session"
+  }
+}
+```
+
+### To disable
+
+Untick the checkbox in the theme customizer → Save. Or change `page_types` / `triggers` workspace-side for finer control.
+
+### Cross-references
+
+- PRD: `docs/PRDS/PRD-007-PROACTIVE-WIDGET-ENGAGEMENT.md`
+- SDK behaviour: `automatos-widget-sdk/docs/EMBEDDING.md` §3a
+- Orchestrator endpoints: `GET /api/widgets/config` (SDK init), `POST /api/widgets/chat` (page_context + trigger_reason fields)
+- Skill prompt: `automatos-skills/shopify/shopify-support/SKILL.md` § "Proactive Opener Mode"
+- Deploy procedure: `docs/RUNBOOKS/release-procedure.md`
 
 ### What this does NOT do to the live storefront
 

@@ -114,9 +114,34 @@ For PoC merchants, do this on an **unpublished theme copy**:
 3. Open browser devtools on the storefront preview → Network tab → confirm:
    - `widgets.automatos.app/v0/widget.js` returns 200
    - Widget initiation POST to orchestrator returns a JWT
+   - `GET /api/widgets/config` returns the workspace's `widget_proactive` block (200, body contains `config.widget_proactive`)
 4. Send a test message in the widget. Confirm it streams back a response.
 
 **Do NOT publish the modified theme until the merchant explicitly approves.**
+
+---
+
+## 4a. (Optional) Enable PRD-007 proactive engagement
+
+Skip this section for v1 PoCs unless the merchant has signed off on the brand-voice opener for their workspace. Off by default to prevent surprise behaviour.
+
+**The merchant does this themselves in their theme customizer** — no backend access required, no SQL, no workspace ID lookup. Walk them through it (or do it for them on the preview theme):
+
+1. **Online Store → Themes → [their theme] → Customize**
+2. **App embeds → Automatos Support Chat**
+3. Scroll to **Proactive engagement (beta)**
+4. Tick **Enable proactive popups**
+5. (Optional) adjust **Popup delay (seconds)** — default 20
+6. (Optional) edit **Popup message** — default "Need a hand finding the right product?"
+7. **Save**
+
+Verify on the preview URL:
+- Stay 20s on a product page → corner-bubble popup with contextual opener.
+- Dismiss → no re-pop this session.
+- Navigate to a different product → re-arms (different slot).
+- Live published theme: confirm NO popup fires (embed off there).
+
+For finer tuning (popup_style, page_types beyond product, frequency_cap), use `workspace.settings.widget_proactive` directly — full schema in `docs/SHOPIFY/SETUP-GUIDE.md § "Proactive engagement activation"`.
 
 ---
 
