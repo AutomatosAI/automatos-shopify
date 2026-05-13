@@ -6,6 +6,19 @@
   data-position="{{ block.settings.position }}"
   data-theme="{{ block.settings.theme }}"
   data-primary-color="{{ block.settings.primary_color }}"
+  data-page-type="{{ template.name | default: '' }}"
+  data-page-template="{{ template | default: '' }}"
+  data-product-id="{{ product.id | default: '' }}"
+  data-product-handle="{{ product.handle | default: '' }}"
+  data-product-type="{{ product.type | default: '' }}"
+  data-product-vendor="{{ product.vendor | default: '' }}"
+  data-collection-id="{{ collection.id | default: '' }}"
+  data-collection-handle="{{ collection.handle | default: '' }}"
+  data-shop-domain="{{ shop.permanent_domain | default: shop.domain }}"
+  data-shop-currency="{{ shop.currency | default: '' }}"
+  data-shop-locale="{{ request.locale.iso_code | default: '' }}"
+  data-customer-id="{{ customer.id | default: '' }}"
+  data-cart-item-count="{{ cart.item_count | default: 0 }}"
   style="display:none;"
 ></div>
 
@@ -29,6 +42,32 @@
       theme: {{ block.settings.theme | json }},
       themeOverrides: {
         '--aw-primary': {{ block.settings.primary_color | json }},
+      },
+      proactiveOverride: {
+        enabled: {{ block.settings.proactive_enabled | json }},
+        seconds: {{ block.settings.proactive_delay_seconds | default: 20 | json }},
+        message: {{ block.settings.proactive_message | default: 'Need a hand finding the right product?' | json }},
+      },
+      pageContext: {
+        pageType: {{ template.name | default: '' | json }},
+        template: {{ template | default: '' | json }},
+        productId: {{ product.id | default: '' | json }},
+        productHandle: {{ product.handle | default: '' | json }},
+        productType: {{ product.type | default: '' | json }},
+        productVendor: {{ product.vendor | default: '' | json }},
+        productTitle: {{ product.title | default: '' | json }},
+        productPrice: {{ product.price | default: 0 | json }},
+        productAvailable: {{ product.available | default: false | json }},
+        collectionId: {{ collection.id | default: '' | json }},
+        collectionHandle: {{ collection.handle | default: '' | json }},
+        collectionTitle: {{ collection.title | default: '' | json }},
+        shopDomain: {{ shop.permanent_domain | default: shop.domain | json }},
+        shopCurrency: {{ shop.currency | default: '' | json }},
+        shopLocale: {{ request.locale.iso_code | default: '' | json }},
+        customerId: {{ customer.id | default: '' | json }},
+        customerTags: {{ customer.tags | default: '' | json }},
+        cartItemCount: {{ cart.item_count | default: 0 | json }},
+        cartTotalPrice: {{ cart.total_price | default: 0 | json }},
       },
     });
   });
@@ -84,6 +123,35 @@
       "label": "Respect cookie consent",
       "default": true,
       "info": "Only load chat after visitor grants marketing consent (GDPR)"
+    },
+    {
+      "type": "header",
+      "content": "Proactive engagement (beta)"
+    },
+    {
+      "type": "checkbox",
+      "id": "proactive_enabled",
+      "label": "Enable proactive popups",
+      "default": false,
+      "info": "Show a small popup on product pages after the shopper has been browsing for a few seconds. Off by default."
+    },
+    {
+      "type": "range",
+      "id": "proactive_delay_seconds",
+      "label": "Popup delay (seconds)",
+      "min": 5,
+      "max": 120,
+      "step": 5,
+      "default": 20,
+      "unit": "s",
+      "info": "How long the shopper must be on a product page before the popup appears."
+    },
+    {
+      "type": "text",
+      "id": "proactive_message",
+      "label": "Popup message",
+      "default": "Need a hand finding the right product?",
+      "info": "Shown immediately while the AI agent generates a product-specific opener. Keep it short."
     }
   ]
 }
