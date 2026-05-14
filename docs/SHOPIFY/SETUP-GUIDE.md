@@ -439,3 +439,96 @@ automatos-ai/orchestrator/
 ├── config.py                          # SHOPIFY_INTERNAL_API_KEY (NEW)
 └── main.py                            # Router registration (UPDATED)
 ```
+
+---
+
+## PRD-008-A: Configuring Callback Handoff + Cart-Idle (added 2026-05-14)
+
+After PRD-008-A merges and deploys, every workspace gets a default Site
+auto-provisioned by the migration. Merchants configure callback + cart-idle
+features via the new dashboard at `/admin/sites/[siteId]`.
+
+### Backend prerequisites (one-time)
+
+Add SMTP env vars to Railway before traffic hits the orchestrator:
+
+```
+SMTP_HOST=smtp.sendgrid.net   # or your relay
+SMTP_PORT=587
+SMTP_USER=apikey
+SMTP_PASSWORD=<secret>
+SMTP_FROM=callbacks@automatos.app
+```
+
+Without these, every email destination dispatch returns
+`SMTP not configured (SMTP_HOST env var missing)` and writes a
+`callback_failed` row to `widget_event_log`.
+
+Run the migration before serving new code (see `docs/RUNBOOKS/prd-008-a-smoke.md`):
+
+```bash
+cd orchestrator && alembic upgrade prd008a_widget_event_log
+```
+
+### Merchant flow (5 minutes, no developer)
+
+1. Merchant opens **`/admin/sites`** → sees their auto-provisioned Shopify Site.
+2. Clicks the Site row → lands on the detail page (Widget / Destinations / Shopify tabs).
+3. **Destinations tab**:
+   - Toggle "Callback handoff" ON
+   - Click "+ Email", enter `sales@example.com`
+   - Optionally add Slack webhook + CRM webhook + Shopify customer note
+   - Set SLA hours (default 4) and team capacity (default `limited` softens phrasing)
+   - Save
+4. **Widget tab → Cart-idle proactive**:
+   - Toggle ON (panel only appears for Sites with `has_cart=true`)
+   - Adjust idle threshold (default 90s) and greeting copy
+   - Save
+5. **Storefront**:
+   - On product pages: existing PRD-007 proactive popup
+   - On `/cart` after 90s idle: new cart-idle popup
+   - Anywhere chat-widget is open: a caller (e.g. "Request callback" button or
+     intent classifier) can call `window.AutomatosWidget.openCallbackForm()`
+     to surface the phone capture form
+
+### What ships behind the scenes
+
+- Form POSTs to `/api/widgets/callback` → 202 in <100ms with `eta_phrase`
+- Background fan-out to every configured destination in parallel,
+  with retries on retryable failures (5s, 15s backoff, max 3 attempts)
+- Phone numbers NEVER persist in Automatos — only a salted hash for
+  5-minute idempotency lookup; plaintext goes to merchant destinations only
+- Every attempt writes a row to `widget_event_log` for dashboard rollups
+
+### Manual override (no dashboard required)
+
+For dev / scripted setup, configure via PATCH:
+
+```bash
+# Get the Site id for the workspace
+curl -H "Authorization: Bearer $YOUR_USER_JWT" \
+  https://api.automatos.app/api/sites | jq
+
+# Enable callback with destinations
+curl -X PATCH https://api.automatos.app/api/sites/$SITE_ID/settings \
+  -H "Authorization: Bearer $YOUR_USER_JWT" -H "Content-Type: application/json" \
+  -d '{
+    "settings": {
+      "callback": {
+        "enabled": true,
+        "destinations": [{"type":"email","address":"you@example.com"}],
+        "sla_hours": 4,
+        "team_capacity": "limited",
+        "working_hours_only": false,
+        "rate_limit_per_hour": 100
+      }
+    }
+  }'
+```
+
+### Reference
+
+- Full smoke-test runbook: [`docs/RUNBOOKS/prd-008-a-smoke.md`](../RUNBOOKS/prd-008-a-smoke.md)
+- PRD: [`docs/PRDS/PRD-008-A-HUMAN-HANDOFF-AND-SITES.md`](../PRDS/PRD-008-A-HUMAN-HANDOFF-AND-SITES.md)
+- Theme block already loads SDK from `widgets.automatos.app/v0/widget.global.js` — no theme deploy needed for the SDK version bump (loaded automatically once `v0` channel is updated)
+

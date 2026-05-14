@@ -23,7 +23,7 @@ Tracks all product requirements docs governing the Automatos ↔ Shopify integra
 | [SHOPIFY-006](PRD-006-WIDGET-AUTH-MODEL.md) | Widget auth model (public key → workspace) | P0 | Draft | — |
 | [SHOPIFY-007](PRD-007-PROACTIVE-WIDGET-ENGAGEMENT.md) | Proactive widget engagement | P1 | Shipped 2026-05-13 (polish pending) | 003, 006 |
 | [SHOPIFY-008](PRD-008-CALLBACK-AND-CART-FEATURES.md) | Callback + cart features (umbrella) | — | Split 2026-05-14 — see 008-A and 008-B | 007 |
-| **[SHOPIFY-008-A](PRD-008-A-HUMAN-HANDOFF-AND-SITES.md)** | **Human handoff + Sites foundation** | **P1** | **Draft v0.1 — next active build (13 days)** | **007** |
+| **[SHOPIFY-008-A](PRD-008-A-HUMAN-HANDOFF-AND-SITES.md)** | **Human handoff + Sites foundation** | **P1** | **Code complete 2026-05-14 — ready for merge + smoke test** ([runbook](../RUNBOOKS/prd-008-a-smoke.md)) | 007 |
 | SHOPIFY-008-B | Cart commerce intelligence (cross-sell + bulk pricing) | P2 | Deferred — re-scoped after 008-A ships | 008-A, 009 Layer 2 |
 | [SHOPIFY-009](PRD-009-PRODUCT-KNOWLEDGE-GROUNDING.md) | Product knowledge grounding | P1 | Parked — Layer 1 shipped; Layers 2–3 resume after 008-A | 007 |
 
