@@ -1,7 +1,7 @@
 # PRD: Product Knowledge Grounding — turning blind agents into informed assistants
 
 **PRD ID:** SHOPIFY-009
-**Status:** Draft v0.1 — ready for client review + engineering scoping
+**Status:** Draft v0.1 — **PARKED 2026-05-14** until PRD-008-A ships. Layer 1 (enriched page context) is live on orchestrator branch `feat/prd-009-layer-1-grounded-context`. Layers 2–3 (catalog graph + live actions) resume after PRD-008-A is solid. PRD-008-B (cross-sell + bulk pricing) is gated on this PRD's Layer 2.
 **Owner:** Gerard
 **Date:** 2026-05-14
 **Priority:** P1 — without this, every Automatos chatbot feels generic. With it, every Automatos chatbot feels like the merchant's most informed staff member.

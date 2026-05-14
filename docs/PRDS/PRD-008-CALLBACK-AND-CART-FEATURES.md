@@ -1,10 +1,19 @@
 # PRD: Callback Handoff + Cart-Page Engagement (Features B, C1, C2, C3)
 
-**PRD ID:** SHOPIFY-008
-**Status:** Draft v0.1 — scaffolded from `CLIENT-DISCOVERY-INBUILDUK.md` §2a. Multiple `[OPEN]` markers awaiting merchant input.
+> ## ⚠ THIS PRD HAS BEEN SPLIT (2026-05-14)
+>
+> The INBUILD-UK-centric framing in this doc has been replaced by two cleaner PRDs after re-scoping for 4.6M-merchant reach:
+>
+> - **Features B (Callback) + C1 (Cart-idle)** → moved to `PRD-008-A-HUMAN-HANDOFF-AND-SITES.md`. These are universal across any Site type (Shopify, Wix, custom embed) and have no PRD-009 dependency. **Active build.**
+> - **Features C2 (Cross-sell) + C3 (Bulk pricing)** → **deferred as PRD-008-B**. Both require the catalog knowledge graph from PRD-009 Layer 2 to avoid fabrication. Re-scoped after PRD-008-A ships.
+>
+> This original doc is retained for traceability — the `[OPEN]` items, story 3+4, the cross_sell/bulk_pricing configuration block, and the C2/C3 risks/acceptance criteria are the seed material for PRD-008-B when work resumes.
+
+**PRD ID:** SHOPIFY-008 (parent, split)
+**Status:** Superseded by PRD-008-A (active) + PRD-008-B (deferred). Kept for traceability.
 **Owner:** Gerard
-**Date:** 2026-05-12
-**Priority:** P2 — Builds on PRD-007 foundation. INBUILD UK explicitly asked for B + C; without these the v1 demo is "page-aware popup" only, not the full vision.
+**Date:** 2026-05-12 (v0.1) → 2026-05-14 (split notice)
+**Priority:** N/A (split)
 
 **Source discovery:** `docs/SHOPIFY/CLIENT-DISCOVERY-INBUILDUK.md` §2a (Features B + C1 + C2 + C3)
 **Hard dependency:** PRD-007 must land first — this PRD relies on the proactive engine, page-context plumbing, and `widget_proactive` workspace config it introduces.

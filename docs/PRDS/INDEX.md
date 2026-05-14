@@ -1,6 +1,6 @@
 # Shopify PRD Index
 
-**Last updated:** 2026-04-16 (evening — see `docs/STATUS.md` for session checkpoint)
+**Last updated:** 2026-05-14
 **Owner:** Gerard
 
 ---
@@ -21,31 +21,52 @@ Tracks all product requirements docs governing the Automatos ↔ Shopify integra
 | [SHOPIFY-004](PRD-004-UNIFIED-INSTALL-FLOW.md) | Unified install flow (one-click) | P1 | Draft | 003 |
 | [SHOPIFY-005](PRD-005-WIDGET-CATALOG.md) | Widget catalog completion (7 widgets) | P1 | Draft | 003 |
 | [SHOPIFY-006](PRD-006-WIDGET-AUTH-MODEL.md) | Widget auth model (public key → workspace) | P0 | Draft | — |
+| [SHOPIFY-007](PRD-007-PROACTIVE-WIDGET-ENGAGEMENT.md) | Proactive widget engagement | P1 | Shipped 2026-05-13 (polish pending) | 003, 006 |
+| [SHOPIFY-008](PRD-008-CALLBACK-AND-CART-FEATURES.md) | Callback + cart features (umbrella) | — | Split 2026-05-14 — see 008-A and 008-B | 007 |
+| **[SHOPIFY-008-A](PRD-008-A-HUMAN-HANDOFF-AND-SITES.md)** | **Human handoff + Sites foundation** | **P1** | **Draft v0.1 — next active build (13 days)** | **007** |
+| SHOPIFY-008-B | Cart commerce intelligence (cross-sell + bulk pricing) | P2 | Deferred — re-scoped after 008-A ships | 008-A, 009 Layer 2 |
+| [SHOPIFY-009](PRD-009-PRODUCT-KNOWLEDGE-GROUNDING.md) | Product knowledge grounding | P1 | Parked — Layer 1 shipped; Layers 2–3 resume after 008-A | 007 |
 
 ---
 
 ## Phase ordering
 
 ```
-Phase 0 — PoC (DONE-ISH, client demo tomorrow)
-  └─ Composio connection proven end-to-end on 1lovefragrance
+Phase 0 — PoC ✅ DONE
+  └─ Composio connection proven end-to-end on 1lovefragrance + besafe-ltd
 
-Phase 1 — Pre-deploy hygiene (this week)
-  ├─ SHOPIFY-002  Scope reconciliation (BLOCKER for next app deploy)
-  └─ SHOPIFY-006  Widget auth model (security-critical before CDN goes live)
+Phase 1 — Pre-deploy hygiene (in progress)
+  ├─ SHOPIFY-002  Scope reconciliation
+  └─ SHOPIFY-006  Widget auth model
 
 Phase 2 — Ship existing widgets properly
   ├─ SHOPIFY-003  CDN distribution
   └─ SHOPIFY-004  Unified install flow
 
-Phase 3 — Expand the moat
-  └─ SHOPIFY-005  Widget catalog (7 more widgets)
+Phase 3 — Engagement foundation ⬅ NEXT ACTIVE WORK
+  ├─ SHOPIFY-007    Proactive engagement (✅ shipped, polish pending)
+  └─ SHOPIFY-008-A  Human handoff + Sites foundation (NEXT — 13 days)
+                    Introduces Sites architecture: universal hub that makes
+                    every future channel (Wix, WooCommerce, custom) a
+                    ~2-day adapter. PoC client INBUILD UK validates here.
 
-Phase 4 — Cross-platform (future, not yet PRD'd)
-  └─ WordPress / WooCommerce / Squarespace via same SDK
+Phase 4 — Knowledge layer (post 008-A)
+  └─ SHOPIFY-009    Product knowledge grounding (Layers 2–3 — catalog
+                    graph via Composio bulk sync + pgvector, live actions)
+
+Phase 5 — Commerce intelligence (gated on Phase 4)
+  └─ SHOPIFY-008-B  Cross-sell + bulk pricing (re-scoped after 009 Layer 2
+                    lands — without grounding, these features fabricate)
+
+Phase 6 — Cross-platform expansion (4.6M reach)
+  ├─ Wix Site adapter on Sites foundation (~2 days)
+  ├─ WooCommerce Site adapter (~3 days)
+  └─ Custom embed flow polish
 ```
 
 Don't skip Phase 1 items. SHOPIFY-002 prevents a merchant re-auth cascade; SHOPIFY-006 prevents abuse of public API keys once the CDN goes live.
+
+**Why Phase 3 first**: PRD-008-A's Sites architecture is the prerequisite for cross-platform scale. Building any future channel without it means rewriting the dashboard. Building it once unlocks the 4.6M-merchant reach beyond Shopify too.
 
 ---
 
