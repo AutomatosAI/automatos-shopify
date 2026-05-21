@@ -23,40 +23,53 @@ Confirm the prerequisites are in place. If any of these are missing, fix that fi
 
 ## 1. Install the Partner app on the merchant's store
 
-Two paths — pick one:
+> **First-time installer?** Read `docs/SHOPIFY/SETUP-GUIDE.md § "Per-client install workflow"` first — it covers the `shopify app config link` → `shopify app deploy` → install-via-Dev-Dashboard flow, plus the gotchas (per-client tomls, scopes-only auto-sync, placeholder application_url). ~5 min read.
 
-### 1a. Partner Dashboard test install (PoC / dev stores)
-1. Shopify Partner Dashboard → Apps → `automatos-ai` → **Test on development store**
-2. Pick the merchant's dev store from the dropdown → Install
-3. You'll be redirected through Shopify OAuth → scope approval screen → click **Install app**
-4. Shopify hands off to `auth.callback.tsx` on the deployed app (currently `https://ui.automatos.app/auth/callback?...`)
+The working pattern is: each merchant has their own copy of the `automatos-ai` Partner app inside their own Dev Dashboard. You link, deploy, install — same workflow regardless of which merchant.
 
-### 1b. Direct install URL (live merchants without Partner test access)
-- Generate an install URL: `https://<merchant-store>.myshopify.com/admin/oauth/install_custom_app?client_id=<SHOPIFY_API_KEY>` — share with the merchant, they click and approve.
+```bash
+# Link this repo to the merchant's Dev Dashboard app
+shopify app config link
+# - Pick org → merchant's Dev Dashboard org (e.g. "INBUILD UK")
+# - Pick app → existing automatos-ai if there is one, otherwise create new
+# - Pick config name → e.g. "automatos-ai" → writes shopify.app.automatos-ai.toml
 
-**Either path lands on `auth.callback.tsx`** which performs:
-- `POST /api/shopify/provision` → creates workspace, clones the 9 marketplace agents, mints a public widget API key
-- `POST /api/shopify/connect` → stores the merchant's Shopify access token
+# Hand-copy from shopify.app.toml into the new toml:
+#   - [webhooks] block + [[webhooks.subscriptions]]
+#   - [auth] redirect_urls (only if Composio is in scope)
+#   - application_url (deployed server URL, or leave placeholder for widget-only PoC)
+
+# Deploy to merchant's app
+shopify app deploy
+
+# Install via merchant's Dev Dashboard
+# dev.shopify.com/dashboard/<org-id>/apps/automatos-ai → Install app → pick store
+```
+
+After install, the app appears under Apps in the merchant's admin and the theme extension is available in their theme customizer. **No widget renders anywhere yet** — embeds are OFF by default in every theme.
 
 ---
 
-## 2. Capture the workspace IDs
+## 2. Mint workspace + public widget API key
 
-Right after install, the orchestrator logs the provision result. Pull the line that looks like:
+The install does **not** auto-provision an Automatos workspace. You mint the workspace + key out-of-band:
 
+```bash
+curl -X POST https://api.automatos.app/api/shopify/provision \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "shopify",
+    "external_id": "<store>.myshopify.com",
+    "name": "<Merchant Name>",
+    "metadata": {"shopify_domain": "<store>.myshopify.com"}
+  }'
 ```
-[automatos] provisioned <shop>.myshopify.com: workspace=<UUID> agents=9 is_new=true key_prefix=ak_pub_xxxx...
-```
 
-Where to read this:
-- **Production:** orchestrator logs (`api.automatos.app` → wherever logs ship — check `automatos-ai/docs/RUNBOOKS/`)
-- **Local dev (`shopify app dev`):** the dev tunnel terminal output
+Returns `{id, public_id, name, api_key, agents_installed, is_new}`. Save:
+- `workspace.public_id` (UUID) — used as `COMPOSIO_ENTITY_ID` if wiring up Composio
+- `api_key` (full string, `ak_pub_...`) — paste into theme widget settings
 
-Record:
-- `workspace.public_id` (UUID) — this is what Composio will use as `entity_id`
-- The first 12 chars of `api_key` (full key shown ONCE; can be regenerated on re-install)
-
-If provisioning failed (look for `[automatos] provisioning failed for ...` in logs), DO NOT proceed — fix the orchestrator side first. The merchant CAN still get into the embedded app, but agents and Composio won't work.
+The endpoint is idempotent on `shopify_domain`. If you re-run it, the same workspace is returned (but the `api_key` is regenerated — the previous one stops working, so only re-run when intentionally rotating the key).
 
 ---
 
@@ -101,9 +114,34 @@ For PoC merchants, do this on an **unpublished theme copy**:
 3. Open browser devtools on the storefront preview → Network tab → confirm:
    - `widgets.automatos.app/v0/widget.js` returns 200
    - Widget initiation POST to orchestrator returns a JWT
+   - `GET /api/widgets/config` returns the workspace's `widget_proactive` block (200, body contains `config.widget_proactive`)
 4. Send a test message in the widget. Confirm it streams back a response.
 
 **Do NOT publish the modified theme until the merchant explicitly approves.**
+
+---
+
+## 4a. (Optional) Enable PRD-007 proactive engagement
+
+Skip this section for v1 PoCs unless the merchant has signed off on the brand-voice opener for their workspace. Off by default to prevent surprise behaviour.
+
+**The merchant does this themselves in their theme customizer** — no backend access required, no SQL, no workspace ID lookup. Walk them through it (or do it for them on the preview theme):
+
+1. **Online Store → Themes → [their theme] → Customize**
+2. **App embeds → Automatos Support Chat**
+3. Scroll to **Proactive engagement (beta)**
+4. Tick **Enable proactive popups**
+5. (Optional) adjust **Popup delay (seconds)** — default 20
+6. (Optional) edit **Popup message** — default "Need a hand finding the right product?"
+7. **Save**
+
+Verify on the preview URL:
+- Stay 20s on a product page → corner-bubble popup with contextual opener.
+- Dismiss → no re-pop this session.
+- Navigate to a different product → re-arms (different slot).
+- Live published theme: confirm NO popup fires (embed off there).
+
+For finer tuning (popup_style, page_types beyond product, frequency_cap), use `workspace.settings.widget_proactive` directly — full schema in `docs/SHOPIFY/SETUP-GUIDE.md § "Proactive engagement activation"`.
 
 ---
 
@@ -122,11 +160,13 @@ Before declaring the merchant onboarded:
 
 ## Common pitfalls (in order of likelihood)
 
-1. **Provision fails with 422** — `external_id` or `name` missing. Check `auth.callback.tsx` is reading shop metadata correctly.
-2. **Composio stuck at `INITIATED`** — merchant didn't click Install on the authorize URL, or clicked but Shopify didn't redirect (check Partner app redirect URLs are both v1 and v3).
-3. **Smoke test fails with `Toolkit version not specified`** — the script pins `20260414_00`. If that's stale, check `https://docs.composio.dev/toolkits/shopify` for the current version.
-4. **Smoke test fails with tool-not-found** — toolkit slugs change occasionally. The script uses `SHOPIFY_GET_SHOP_DETAILS` + `SHOPIFY_COUNT_PRODUCTS`. If those move, use `getRawComposioTools({ toolkits: ["shopify"], limit: 400 })` to find the new names.
-5. **Widget loads but JWT handshake fails** — check `workspace.api_key` was actually used in the theme block. The theme app block reads it from a metafield/settings; confirm it's populated.
+1. **`shopify app config link` picks the wrong org** — re-run with `--reset` and pick carefully; the org must own the merchant's store.
+2. **`shopify app deploy` fails with missing webhooks** — `shopify app config link` only auto-syncs scopes. Hand-copy `[webhooks]` and `[[webhooks.subscriptions]]` from `shopify.app.toml` to the per-client toml.
+3. **Cross-org install error** ("not a dev store associated with the Partner organization X") — the existing app is in a different org from the merchant. Don't try to install across orgs; instead `shopify app config link` to the merchant's own org and create a per-client app there.
+4. **Provision returns 422** — `external_id` or `name` missing in the curl body. Recheck the JSON.
+5. **Composio stuck at `INITIATED`** — merchant didn't click Install on the authorize URL, or clicked but Shopify didn't redirect (check Partner app redirect URLs are both v1 and v3 in the per-client toml's `[auth]` block).
+6. **Composio smoke test fails with `Toolkit version not specified`** — the script pins `20260414_00`. If that's stale, check `https://docs.composio.dev/toolkits/shopify` for the current version.
+7. **Widget loads but JWT handshake fails** — confirm `workspace.api_key` was pasted into the theme block settings (Theme customizer → App embeds → Automatos AI Widgets → API Key field).
 
 ---
 
@@ -145,8 +185,9 @@ Before declaring the merchant onboarded:
 
 **Prerequisites in addition to §0:**
 - [ ] Merchant explicitly authorises the install — written or recorded.
-- [ ] `ui.automatos.app` deploys the current contract refactor (verify by curling `https://api.automatos.app/api/shopify/provision` returns 422, not 404, and the deployed Shopify-app commit matches `git rev-parse HEAD`).
-- [ ] You have access to the merchant's Online Store admin (or they're available to follow your steps live).
+- [ ] You have access to the merchant's Dev Dashboard (`dev.shopify.com/dashboard/<their-org-id>`) so you can run `shopify app config link` against their org.
+- [ ] You have access to the merchant's Online Store admin (or they're available to follow your steps live) for the post-install widget configuration.
+- [ ] Orchestrator endpoints alive — verify by curling `https://api.automatos.app/api/shopify/provision` returns 422, not 404.
 
 ### A.1 Identify or create the unpublished theme to use
 
@@ -165,19 +206,20 @@ Either way:
 
 ### A.2 Install Automatos on the live store
 
-Standard install path (Partner Dashboard test install, or production install link). When OAuth completes:
-- `auth.callback.tsx` runs against the deployed `ui.automatos.app` (must be the refactored version)
-- Provision succeeds → workspace created against `innobuilduk.myshopify.com`
-- Access token stored via `/api/shopify/connect`
+Use the per-client deploy flow from §1 of this runbook (full detail in `docs/SHOPIFY/SETUP-GUIDE.md § "Per-client install workflow"`):
+1. `shopify app config link` → pick the merchant's org → use existing `automatos-ai` app in their Dev Dashboard or create one
+2. Hand-copy webhooks + (optional) Composio redirect URLs from master `shopify.app.toml` into the per-client toml
+3. `shopify app deploy` → pushes scopes + theme extension to the merchant's app
+4. Merchant Dev Dashboard → Apps → `automatos-ai` → **Install app** → pick the live store → approve scopes
 
-**Do NOT use `shopify app dev` for the live install** — that creates a temporary tunnel that dies. The merchant's workspace must be against the persistent production app.
+**Do NOT use `shopify app dev`** for the live install — that's for local development of this repo, not production installs.
 
-### A.3 Capture provision result + Composio wire-up
+### A.3 Mint workspace + Composio wire-up
 
 Same as §2 and §3 of the main runbook. Record:
-- `workspace.public_id` (from orchestrator logs)
-- `api_key` first 12 chars
-- After `composio-resume.mjs`: `connected_account` ID
+- `workspace.public_id` (returned by the provision curl)
+- `api_key` first 12 chars (stored once, save the full key for the widget)
+- After `composio-resume.mjs`: `connected_account` ID (only if Composio is in scope for this client)
 
 ### A.4 Read-only-only Composio guardrail
 

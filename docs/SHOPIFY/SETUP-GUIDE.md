@@ -139,6 +139,185 @@ In the Shopify admin, open the Automatos app. You should see:
 
 ---
 
+## Per-client install workflow (the working pattern)
+
+This is the simplest and most reliable way to install the Automatos Partner app on a new merchant. **Each merchant has their own copy of the `automatos-ai` app inside their own Dev Dashboard**. The master `shopify.app.toml` in this repo is the canonical scopes + extension definition; per-client tomls (`shopify.app.<client>.toml`) get derived from it.
+
+This pattern was proven on `1lovefragrance` and re-validated on INBUILD UK.
+
+### Why this and not `shopify app dev`?
+
+`shopify app dev` (Cloudflare tunnel mode) is for **YOUR own local development** of the Shopify app — iterating on `auth.callback.tsx`, embedded admin routes, webhook handlers, against a dev store you own. It's the wrong tool for client installs:
+
+- The tunnel is temporary; dies when you stop the CLI
+- It requires the target store to be a dev store of the Partner org owning the app — won't install cross-org
+- It updates the Partner app URL globally, affecting any other in-flight install
+
+For client installs, use the deploy-based flow below.
+
+### Steps
+
+```bash
+# 1. Link this repo to the merchant's Dev Dashboard app
+shopify app config link
+#    - Pick organization → merchant's Dev Dashboard org (e.g. "INBUILD UK")
+#    - Pick app → existing automatos-ai if one exists, otherwise create new
+#    - Pick config name → e.g. "automatos-ai"
+#    Result: shopify.app.<config-name>.toml is written, linked to merchant's client_id.
+#    Scopes (140) are auto-populated from the master shopify.app.toml.
+
+# 2. Hand-copy missing config from shopify.app.toml into the new toml:
+#    - [webhooks] block + [[webhooks.subscriptions]]  (GDPR + app/uninstalled + orders/create + shop/update)
+#    - [auth] redirect_urls  (Composio backend URLs — only if Composio is in scope for this client)
+#    - application_url  (point at deployed Shopify app server if embedded admin is needed; otherwise leave the placeholder)
+
+# 3. Deploy to the merchant's app
+shopify app deploy
+#    Pushes scopes, webhooks, theme extension (chat-widget, product-qa, blog-widget, review-summary).
+#    Creates a new "version" in the merchant's Dev Dashboard.
+
+# 4. Install on the merchant's store via Dev Dashboard
+#    dev.shopify.com/dashboard/<merchant-org-id>/apps/automatos-ai
+#    → Click "Install app"
+#    → Pick target store (e.g. innobuilduk.myshopify.com)
+#    → Approve scope screen
+#    Result: app installed; theme extension available in merchant's Theme customizer.
+
+# 5. Mint the Automatos workspace + public widget API key (out-of-band; install does not auto-trigger this)
+curl -X POST https://api.automatos.app/api/shopify/provision \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "shopify",
+    "external_id": "<store>.myshopify.com",
+    "name": "<Merchant Name>",
+    "metadata": {"shopify_domain": "<store>.myshopify.com"}
+  }'
+#    Response includes workspace public_id and api_key. Save both.
+
+# 6. Configure widget on the merchant's chosen theme
+#    Merchant admin → Online Store → Themes → <target theme> → Customize
+#    → Theme settings → App embeds → Automatos AI Widgets → toggle ON
+#    → Paste the api_key + agent_id from step 5
+#    → Save (do NOT publish if using an unpublished theme as a sandbox)
+
+# 7. Verify on theme preview URL
+#    - Open preview URL → confirm widget loads + chat responds
+#    - Open published storefront → confirm no widget renders (if using unpublished theme)
+
+# 8. (Optional) Enable PRD-007 proactive engagement
+#    Default is OFF after provisioning. Flip on once merchant has approved
+#    the brand-voice opener. See "Proactive engagement activation" below.
+
+# 9. Update docs/SHOPIFY/CLIENTS.md with the new merchant row.
+```
+
+---
+
+## Proactive engagement activation (PRD-007)
+
+**Merchant-facing path (recommended).** Three settings in the chat-widget theme
+block, ticked from the same place the merchant pasted their API key. No
+workspace IDs, no curl, no SQL.
+
+### What the merchant does (30 seconds)
+
+1. Merchant admin → **Online Store → Themes → [their theme] → Customize**.
+2. **App embeds** (sidebar) → **Automatos Support Chat**.
+3. Scroll to **Proactive engagement (beta)** section:
+
+   | Setting | Default | What it does |
+   |---|---|---|
+   | ☐ **Enable proactive popups** | off | Master switch. Off until ticked. |
+   | **Popup delay (seconds)** | 20 | How long the shopper sits on a product page before the popup appears. Range 5–120. |
+   | **Popup message** | "Need a hand finding the right product?" | Shown immediately while the agent generates a product-specific opener (which replaces it within ~1.5s). |
+
+4. Tick **Enable proactive popups**.
+5. **Save**.
+6. Storefront preview → product page → wait the configured delay → corner-bubble
+   popup appears with a contextual one-line opener referencing the product.
+
+That's it. Same theme-customizer flow the merchant already knows from pasting
+their API key. No backend access required.
+
+### How it works under the hood
+
+The theme block passes a `proactiveOverride` object to the SDK on init:
+
+```js
+proactiveOverride: {
+  enabled: true,        // from the checkbox
+  seconds: 20,          // from the range slider
+  message: "..."        // from the text input
+}
+```
+
+The SDK merges this with the workspace-level config (`workspace.settings.widget_proactive`):
+
+- **`enabled`** uses OR semantics — either source flipping it on fires the popup.
+- **`seconds`** and **`message`** from the theme win when supplied.
+- **All other tunables** (popup_style, page_types, frequency_cap, etc.) come from the workspace config (or hardcoded v1 defaults if no workspace config exists).
+
+This means platform admins can still adjust advanced behaviour per-merchant via the workspace settings (when the dashboard UI lands; for now via DB), while the merchant's day-to-day on/off control is a single checkbox in the theme.
+
+### Default config seeded into every new Shopify workspace
+
+Set by `POST /api/shopify/provision`:
+
+```jsonc
+{
+  "widget_proactive": {
+    "enabled": false,                          // opt-in
+    "page_types": ["product"],                 // fire on product pages only
+    "triggers": [{ "type": "time_on_page", "seconds": 20 }],
+    "frequency_cap": { "scope": "session", "max_pops": 1 },
+    "greeting_source": "agent_with_canned_fallback",
+    "canned_fallback": "Need a hand finding the right product?",
+    "agent_timeout_ms": 1500,                  // canned shown if LLM > 1.5s
+    "popup_style": "corner_bubble",
+    "respect_consent": true,                   // honour GDPR cookie consent
+    "dismissal_persistence": "session"
+  }
+}
+```
+
+### To disable
+
+Untick the checkbox in the theme customizer → Save. Or change `page_types` / `triggers` workspace-side for finer control.
+
+### Cross-references
+
+- PRD: `docs/PRDS/PRD-007-PROACTIVE-WIDGET-ENGAGEMENT.md`
+- SDK behaviour: `automatos-widget-sdk/docs/EMBEDDING.md` §3a
+- Orchestrator endpoints: `GET /api/widgets/config` (SDK init), `POST /api/widgets/chat` (page_context + trigger_reason fields)
+- Skill prompt: `automatos-skills/shopify/shopify-support/SKILL.md` § "Proactive Opener Mode"
+- Deploy procedure: `docs/RUNBOOKS/release-procedure.md`
+
+### What this does NOT do to the live storefront
+
+- **No widgets render anywhere yet** after install. App embeds are OFF by default in every theme. The merchant has to explicitly toggle ON per theme.
+- **No webhooks fire on historical data.** Subscriptions only see new events post-install.
+- **No agent actions execute** until invoked via the embedded admin or a widget conversation.
+- **The published theme is untouched** unless you (or the merchant) explicitly toggle the Automatos embed ON inside it. Keep it OFF in published themes during demos.
+
+### Rollback
+
+| Stage | How to abort | Result |
+|---|---|---|
+| Before step 4 (no install yet) | Just stop. Nothing has touched the merchant's store. | Zero merchant impact. |
+| Step 4 scope screen visible | Click **Cancel** | No install, no traces. |
+| After step 4 (app installed) | Merchant admin → Apps → Automatos AI → Uninstall | `app/uninstalled` webhook fires → orchestrator soft-deletes workspace. Theme extension files removed from store. |
+| Live storefront protection | Toggle the Automatos embed ON only in unpublished themes (e.g. "AI Testing"). | Real shoppers see zero Automatos activity. |
+
+### Gotchas / notes
+
+- **Per-client tomls are local, not shared.** `shopify.app.<client>.toml` lives only in your repo clone. Treat as a local working file. Recommendation: add `shopify.app.*.toml` to `.gitignore` while keeping the master `shopify.app.toml` tracked.
+- **Each merchant's app has its own `client_id`.** From Shopify's POV they're separate apps. Composio auth configs are bound to a `client_id`, so each merchant needing Composio gets their own auth config (run `scripts/composio-setup.mjs` against each one).
+- **Placeholder `application_url`** (`https://shopify.dev/apps/default-app-home`) is fine for installs where you only need theme extension + widgets. The embedded admin won't render — that's only needed if the merchant clicks "Open app" inside their admin. For widget-only PoCs, leave the placeholder.
+- **`shopify app config link` only auto-syncs scopes.** Webhooks and redirect URLs are not copied — you have to hand-copy from `shopify.app.toml`. (Worth scripting in the future.)
+- **`shopify app deploy` against a per-client toml only affects that merchant's app.** Other merchants' apps are unaffected. Same goes for installs and webhooks.
+
+---
+
 ## Provisioning API Reference
 
 These endpoints are called by the Shopify app, secured by `SHOPIFY_INTERNAL_API_KEY`:
@@ -260,3 +439,96 @@ automatos-ai/orchestrator/
 ├── config.py                          # SHOPIFY_INTERNAL_API_KEY (NEW)
 └── main.py                            # Router registration (UPDATED)
 ```
+
+---
+
+## PRD-008-A: Configuring Callback Handoff + Cart-Idle (added 2026-05-14)
+
+After PRD-008-A merges and deploys, every workspace gets a default Site
+auto-provisioned by the migration. Merchants configure callback + cart-idle
+features via the new dashboard at `/admin/sites/[siteId]`.
+
+### Backend prerequisites (one-time)
+
+Add SMTP env vars to Railway before traffic hits the orchestrator:
+
+```
+SMTP_HOST=smtp.sendgrid.net   # or your relay
+SMTP_PORT=587
+SMTP_USER=apikey
+SMTP_PASSWORD=<secret>
+SMTP_FROM=callbacks@automatos.app
+```
+
+Without these, every email destination dispatch returns
+`SMTP not configured (SMTP_HOST env var missing)` and writes a
+`callback_failed` row to `widget_event_log`.
+
+Run the migration before serving new code (see `docs/RUNBOOKS/prd-008-a-smoke.md`):
+
+```bash
+cd orchestrator && alembic upgrade prd008a_widget_event_log
+```
+
+### Merchant flow (5 minutes, no developer)
+
+1. Merchant opens **`/admin/sites`** → sees their auto-provisioned Shopify Site.
+2. Clicks the Site row → lands on the detail page (Widget / Destinations / Shopify tabs).
+3. **Destinations tab**:
+   - Toggle "Callback handoff" ON
+   - Click "+ Email", enter `sales@example.com`
+   - Optionally add Slack webhook + CRM webhook + Shopify customer note
+   - Set SLA hours (default 4) and team capacity (default `limited` softens phrasing)
+   - Save
+4. **Widget tab → Cart-idle proactive**:
+   - Toggle ON (panel only appears for Sites with `has_cart=true`)
+   - Adjust idle threshold (default 90s) and greeting copy
+   - Save
+5. **Storefront**:
+   - On product pages: existing PRD-007 proactive popup
+   - On `/cart` after 90s idle: new cart-idle popup
+   - Anywhere chat-widget is open: a caller (e.g. "Request callback" button or
+     intent classifier) can call `window.AutomatosWidget.openCallbackForm()`
+     to surface the phone capture form
+
+### What ships behind the scenes
+
+- Form POSTs to `/api/widgets/callback` → 202 in <100ms with `eta_phrase`
+- Background fan-out to every configured destination in parallel,
+  with retries on retryable failures (5s, 15s backoff, max 3 attempts)
+- Phone numbers NEVER persist in Automatos — only a salted hash for
+  5-minute idempotency lookup; plaintext goes to merchant destinations only
+- Every attempt writes a row to `widget_event_log` for dashboard rollups
+
+### Manual override (no dashboard required)
+
+For dev / scripted setup, configure via PATCH:
+
+```bash
+# Get the Site id for the workspace
+curl -H "Authorization: Bearer $YOUR_USER_JWT" \
+  https://api.automatos.app/api/sites | jq
+
+# Enable callback with destinations
+curl -X PATCH https://api.automatos.app/api/sites/$SITE_ID/settings \
+  -H "Authorization: Bearer $YOUR_USER_JWT" -H "Content-Type: application/json" \
+  -d '{
+    "settings": {
+      "callback": {
+        "enabled": true,
+        "destinations": [{"type":"email","address":"you@example.com"}],
+        "sla_hours": 4,
+        "team_capacity": "limited",
+        "working_hours_only": false,
+        "rate_limit_per_hour": 100
+      }
+    }
+  }'
+```
+
+### Reference
+
+- Full smoke-test runbook: [`docs/RUNBOOKS/prd-008-a-smoke.md`](../RUNBOOKS/prd-008-a-smoke.md)
+- PRD: [`docs/PRDS/PRD-008-A-HUMAN-HANDOFF-AND-SITES.md`](../PRDS/PRD-008-A-HUMAN-HANDOFF-AND-SITES.md)
+- Theme block already loads SDK from `widgets.automatos.app/v0/widget.global.js` — no theme deploy needed for the SDK version bump (loaded automatically once `v0` channel is updated)
+
