@@ -40,6 +40,7 @@
       agentId: {{ block.settings.agent_id | json }},
       position: {{ block.settings.position | json }},
       theme: {{ block.settings.theme | json }},
+      title: {{ block.settings.widget_title | default: shop.name | json }},
       themeOverrides: {
         '--aw-primary': {{ block.settings.primary_color | json }},
       },
@@ -89,6 +90,13 @@
       "id": "agent_id",
       "label": "Agent ID",
       "info": "The support agent UUID. Found in Automatos app settings."
+    },
+    {
+      "type": "text",
+      "id": "widget_title",
+      "label": "Widget title",
+      "info": "Shown in the chat header. Defaults to your shop name. 'Powered by Automatos AI' stays in the footer.",
+      "default": ""
     },
     {
       "type": "select",
