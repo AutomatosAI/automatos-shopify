@@ -124,7 +124,7 @@ In the Shopify admin, open the Automatos app. You should see:
 1. Go to **Online Store → Customize**
 2. Click **App embeds** (left sidebar, bottom)
 3. Enable **Automatos Support Chat**
-4. Configure: paste the API key from provisioning, set agent ID
+4. Configure: copy the public API key from the app's **Settings → API Key**, paste it here (leave Agent ID blank to use the workspace's default agent)
 5. Navigate to a product template
 6. Add **Automatos Product Q&A** block
 7. Preview the theme — you should see the chat FAB and Q&A block
@@ -183,21 +183,32 @@ shopify app deploy
 #    → Approve scope screen
 #    Result: app installed; theme extension available in merchant's Theme customizer.
 
-# 5. Mint the Automatos workspace + public widget API key (out-of-band; install does not auto-trigger this)
-curl -X POST https://api.automatos.app/api/shopify/provision \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source": "shopify",
-    "external_id": "<store>.myshopify.com",
-    "name": "<Merchant Name>",
-    "metadata": {"shopify_domain": "<store>.myshopify.com"}
-  }'
-#    Response includes workspace public_id and api_key. Save both.
+# 5. Workspace + public widget key are minted AUTOMATICALLY on install
+#    auth.callback.tsx → provisionAndStore creates the Automatos workspace,
+#    clones agents, mints the public ak_pub_ key, and caches it against the shop.
+#    The merchant copies the key straight from the embedded admin:
+#        App → Settings → "API Key" → Copy
+#    (A "Re-provision" button on that page retries if install-time provisioning
+#     failed; a banner prompts "Provision now" if it never ran.)
+#
+#    Requires the embedded admin to be reachable — application_url (step 2) must
+#    point at the deployed Shopify app server. If you deliberately left the
+#    placeholder (headless per-client deploy, no hosted admin), mint out-of-band:
+#        curl -X POST https://api.automatos.app/api/shopify/provision \
+#          -H "Content-Type: application/json" \
+#          -d '{
+#            "source": "shopify",
+#            "external_id": "<store>.myshopify.com",
+#            "name": "<Merchant Name>",
+#            "metadata": {"shopify_domain": "<store>.myshopify.com"}
+#          }'
+#        Response includes workspace public_id and api_key. Save both.
 
 # 6. Configure widget on the merchant's chosen theme
 #    Merchant admin → Online Store → Themes → <target theme> → Customize
 #    → Theme settings → App embeds → Automatos AI Widgets → toggle ON
-#    → Paste the api_key + agent_id from step 5
+#    → Paste the api_key copied from Settings (step 5)
+#      (leave Agent ID blank to use the workspace's default agent)
 #    → Save (do NOT publish if using an unpublished theme as a sandbox)
 
 # 7. Verify on theme preview URL
