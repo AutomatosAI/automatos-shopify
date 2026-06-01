@@ -34,6 +34,7 @@
         layout: {{ block.settings.layout | json }},
         postsPerPage: {{ block.settings.posts_per_page }},
         category: {{ block.settings.category | json }},
+        columns: {{ block.settings.columns }},
       },
       themeOverrides: {
         '--aw-primary': {{ block.settings.primary_color | json }},
@@ -93,6 +94,16 @@
         { "value": "featured", "label": "Featured" },
         { "value": "minimal", "label": "Minimal" }
       ]
+    },
+    {
+      "type": "range",
+      "id": "columns",
+      "label": "Columns (grid layout)",
+      "info": "Posts per row on desktop. Collapses to 2 on tablet, 1 on mobile.",
+      "min": 2,
+      "max": 4,
+      "step": 1,
+      "default": 3
     },
     {
       "type": "range",
