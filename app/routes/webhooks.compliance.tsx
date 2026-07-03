@@ -5,9 +5,9 @@ import { automatosClient } from "../automatos.server";
 /**
  * The three mandatory Shopify GDPR / compliance webhooks (PRD-183 S6, Wave 11).
  *
- *   customers/redact       → platform POST /api/v1/gdpr/erase-subject
- *   shop/redact            → platform POST /api/v1/gdpr/erase
- *   customers/data_request → platform GET  /api/v1/gdpr/export
+ *   customers/redact       → platform POST /api/verticals/shopify/gdpr/erase-subject
+ *   shop/redact            → platform POST /api/verticals/shopify/gdpr/erase
+ *   customers/data_request → platform GET  /api/verticals/shopify/gdpr/export
  *
  * Shopify requires these to be registered and to respond 2xx after HMAC
  * verification. `authenticate.webhook` performs the HMAC check; if it fails it

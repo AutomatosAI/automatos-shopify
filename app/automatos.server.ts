@@ -10,13 +10,16 @@
  *   POST /api/shopify/sync                 — shop/update webhook
  *   POST /api/shopify/events               — catalog + other webhooks (S1: body carries type/id for the incremental graph builder, F032)
  *   POST /api/shopify/deactivate           — app uninstall
- *   POST /api/v1/gdpr/erase-subject        — customers/redact  (Wave 11 erase_data_subject entrypoint)
- *   POST /api/v1/gdpr/erase                — shop/redact       (Wave 11 whole-workspace erase)
- *   GET  /api/v1/gdpr/export               — customers/data_request (Wave 11 export bundle)
+ *   POST /api/verticals/shopify/gdpr/erase-subject  — customers/redact  (Wave 11 erase_data_subject cascade)
+ *   POST /api/verticals/shopify/gdpr/erase          — shop/redact       (Wave 11 whole-workspace erase)
+ *   GET  /api/verticals/shopify/gdpr/export         — customers/data_request (Wave 11 export bundle)
  *
- * Auth: Bearer <AUTOMATOS_API_KEY>. The platform resolves the workspace from the
- * shop domain (catalog/lifecycle path) or from the authenticated RequestContext
- * (GDPR path). Dev mode (no key configured server-side) accepts unauthenticated calls.
+ * Auth: Bearer <AUTOMATOS_API_KEY> (the platform's internal key) on every call.
+ * The platform resolves the workspace from the shop domain (`external_id`) for
+ * BOTH the catalog/lifecycle path AND the GDPR path — a compliance webhook is
+ * machine-to-machine with no logged-in workspace admin, so the GDPR calls target
+ * the internal-key-authed vertical surface (not the user-facing /api/v1/gdpr/*
+ * endpoints, which resolve the workspace from a browser session).
  */
 
 const AUTOMATOS_API_URL =
@@ -208,14 +211,23 @@ export const automatosClient = {
 
   /**
    * GDPR: customers/redact — erase a single data subject within the workspace
-   * (Wave 11 erase_data_subject entrypoint). Errors are logged, never thrown —
-   * Shopify retries compliance webhooks on non-2xx, but we must ack the HMAC-
-   * verified receipt regardless of platform availability.
+   * resolved from the shop domain (Wave 11 erase_data_subject cascade).
+   *
+   * Targets the internal-key-authed vertical GDPR surface
+   * (POST /api/verticals/shopify/gdpr/erase-subject). A Shopify webhook has no
+   * logged-in workspace admin, so the user-facing /api/v1/gdpr/* endpoints (which
+   * resolve the workspace from the session) cannot serve it. The internal surface
+   * resolves the workspace from `external_id` (the shop) and 404s if none matches,
+   * so an erasure can never land on a wrong/blank workspace.
+   *
+   * Errors are logged, never thrown — Shopify retries compliance webhooks on
+   * non-2xx, but we must ack the HMAC-verified receipt regardless of platform
+   * availability.
    */
   async eraseDataSubject(shop: string, subjectId: string): Promise<void> {
-    await request<GdprResponse>("/api/v1/gdpr/erase-subject", {
+    await request<GdprResponse>("/api/verticals/shopify/gdpr/erase-subject", {
       method: "POST",
-      body: JSON.stringify({ shop, subject_id: subjectId }),
+      body: JSON.stringify({ external_id: shop, subject_id: subjectId }),
     }).catch((err) => {
       console.error(
         `[automatos] gdpr erase-subject failed for ${shop} subject=${subjectId}:`,
@@ -226,13 +238,17 @@ export const automatosClient = {
 
   /**
    * GDPR: shop/redact — erase the whole workspace for a shop 48h after uninstall
-   * (Wave 11 whole-workspace erase). The platform requires a confirmation echo of
-   * the workspace id; the shop domain lets it resolve + confirm server-side.
+   * (Wave 11 whole-workspace erase cascade).
+   *
+   * Targets POST /api/verticals/shopify/gdpr/erase. The platform resolves the
+   * workspace from `external_id` server-side (no confirmation echo is needed or
+   * possible — the caller cannot name a workspace id); a non-matching shop 404s
+   * rather than erasing anything.
    */
   async eraseWorkspace(shop: string): Promise<void> {
-    await request<GdprResponse>("/api/v1/gdpr/erase", {
+    await request<GdprResponse>("/api/verticals/shopify/gdpr/erase", {
       method: "POST",
-      body: JSON.stringify({ shop, source: "shopify" }),
+      body: JSON.stringify({ external_id: shop }),
     }).catch((err) => {
       console.error(`[automatos] gdpr erase failed for ${shop}:`, err);
     });
@@ -240,15 +256,21 @@ export const automatosClient = {
 
   /**
    * GDPR: customers/data_request — export the data held for a subject/shop
-   * (Wave 11 export bundle). The shop/customer identifiers are passed as query
-   * params so the platform can scope the export.
+   * (Wave 11 export bundle).
+   *
+   * Targets GET /api/verticals/shopify/gdpr/export. `external_id` (the shop)
+   * resolves the workspace; `customer_id` is passed for audit provenance /
+   * subject scoping.
    */
   async exportDataSubject(shop: string, customerId?: string): Promise<void> {
-    const params = new URLSearchParams({ shop });
+    const params = new URLSearchParams({ external_id: shop });
     if (customerId) params.set("customer_id", customerId);
-    await request<GdprResponse>(`/api/v1/gdpr/export?${params.toString()}`, {
-      method: "GET",
-    }).catch((err) => {
+    await request<GdprResponse>(
+      `/api/verticals/shopify/gdpr/export?${params.toString()}`,
+      {
+        method: "GET",
+      },
+    ).catch((err) => {
       console.error(`[automatos] gdpr export failed for ${shop}:`, err);
     });
   },

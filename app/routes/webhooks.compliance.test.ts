@@ -35,7 +35,7 @@ describe("webhooks.compliance action (mandatory GDPR)", () => {
     exportDataSubject.mockReset();
   });
 
-  it("CUSTOMERS_REDACT → eraseDataSubject(shop, customerId)  [POST /api/v1/gdpr/erase-subject]", async () => {
+  it("CUSTOMERS_REDACT → eraseDataSubject(shop, customerId)  [POST /api/verticals/shopify/gdpr/erase-subject]", async () => {
     webhookMock.mockResolvedValue({
       topic: "CUSTOMERS_REDACT",
       shop: "demo.myshopify.com",
@@ -49,7 +49,7 @@ describe("webhooks.compliance action (mandatory GDPR)", () => {
     expect(exportDataSubject).not.toHaveBeenCalled();
   });
 
-  it("SHOP_REDACT → eraseWorkspace(shop)  [POST /api/v1/gdpr/erase]", async () => {
+  it("SHOP_REDACT → eraseWorkspace(shop)  [POST /api/verticals/shopify/gdpr/erase]", async () => {
     webhookMock.mockResolvedValue({
       topic: "SHOP_REDACT",
       shop: "demo.myshopify.com",
@@ -62,7 +62,7 @@ describe("webhooks.compliance action (mandatory GDPR)", () => {
     expect(eraseDataSubject).not.toHaveBeenCalled();
   });
 
-  it("CUSTOMERS_DATA_REQUEST → exportDataSubject(shop, customerId)  [GET /api/v1/gdpr/export]", async () => {
+  it("CUSTOMERS_DATA_REQUEST → exportDataSubject(shop, customerId)  [GET /api/verticals/shopify/gdpr/export]", async () => {
     webhookMock.mockResolvedValue({
       topic: "CUSTOMERS_DATA_REQUEST",
       shop: "demo.myshopify.com",

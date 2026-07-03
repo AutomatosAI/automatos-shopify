@@ -85,35 +85,39 @@ describe("automatosClient — platform seam contract", () => {
     });
   });
 
-  describe("GDPR webhooks → platform /api/v1/gdpr/* (Wave 11)", () => {
-    it("customers/redact → POST /api/v1/gdpr/erase-subject with subject_id", async () => {
+  describe("GDPR webhooks → platform /api/verticals/shopify/gdpr/* (Wave 11 internal surface)", () => {
+    it("customers/redact → POST /api/verticals/shopify/gdpr/erase-subject with external_id + subject_id", async () => {
       await automatosClient.eraseDataSubject("demo.myshopify.com", "cust-42");
 
       expect(calls).toHaveLength(1);
       expect(calls[0].url).toBe(
-        "https://api.automatos.app/api/v1/gdpr/erase-subject",
+        "https://api.automatos.app/api/verticals/shopify/gdpr/erase-subject",
       );
       expect(calls[0].method).toBe("POST");
+      // Machine surface: the workspace is resolved from external_id (the shop),
+      // not a browser session.
       expect(calls[0].body).toMatchObject({
-        shop: "demo.myshopify.com",
+        external_id: "demo.myshopify.com",
         subject_id: "cust-42",
       });
     });
 
-    it("shop/redact → POST /api/v1/gdpr/erase", async () => {
+    it("shop/redact → POST /api/verticals/shopify/gdpr/erase with external_id", async () => {
       await automatosClient.eraseWorkspace("demo.myshopify.com");
 
-      expect(calls[0].url).toBe("https://api.automatos.app/api/v1/gdpr/erase");
+      expect(calls[0].url).toBe(
+        "https://api.automatos.app/api/verticals/shopify/gdpr/erase",
+      );
       expect(calls[0].method).toBe("POST");
-      expect(calls[0].body).toMatchObject({ shop: "demo.myshopify.com" });
+      expect(calls[0].body).toMatchObject({ external_id: "demo.myshopify.com" });
     });
 
-    it("customers/data_request → GET /api/v1/gdpr/export with shop + customer_id query", async () => {
+    it("customers/data_request → GET /api/verticals/shopify/gdpr/export with external_id + customer_id query", async () => {
       await automatosClient.exportDataSubject("demo.myshopify.com", "cust-42");
 
       expect(calls[0].method).toBe("GET");
       expect(calls[0].url).toBe(
-        "https://api.automatos.app/api/v1/gdpr/export?shop=demo.myshopify.com&customer_id=cust-42",
+        "https://api.automatos.app/api/verticals/shopify/gdpr/export?external_id=demo.myshopify.com&customer_id=cust-42",
       );
     });
   });
