@@ -322,3 +322,59 @@ After merchant has answered the `[OPEN]` items above:
 - Sibling repos involved: `automatos-widget-sdk` (popup UI + trigger engine), `automatos-ai` (orchestrator schema + skill update + dashboard UI)
 - Skill to update: `automatos-skills/shopify/shopify-support/SKILL.md` — add "proactive opener" handling
 - Deferred follow-up PRD: PRD-008 (Features B and C)
+
+---
+
+## Addendum — Graph-grounded openers (post PRD-009 Layer 2)
+
+**Status:** active 2026-05-25. Builds on the v0.4 opener (full page_context forwarding) by adding workspace knowledge-graph facts to the directive.
+
+### Why
+
+The v0.4 opener stopped the bot fabricating page facts (price, vendor, availability). Good — but openers still feel generic because the agent has no view of how the current product relates to anything else in the catalog. Example v0.4 output for a smoke-control panel:
+
+> *"Looking at the SVM panel — anything I can help with?"*
+
+PRD-009 Layer 2 now provides per-workspace product↔product relationships. We surface the strongest 1-hop neighbours into the opener directive so the agent has something real to lean on:
+
+> *"Looking at the SVM panel — most installers pair it with the Elta actuator (12 of 57 orders). Want a hand picking the right combo?"*
+
+### What changes
+
+Three minimal edits in two repos. No widget changes, no new endpoints.
+
+1. **Orchestrator** — `api/widgets/chat.py`
+   - New async helper `_resolve_graph_related_products(workspace_id, page_context)`:
+     looks up the seed product by Shopify handle in the workspace graph, walks 1-hop edges, returns top 1 per relation type for `frequently_bought_with`, `in_collection`, `by_vendor`.
+   - `_build_proactive_opener_message` takes a new optional `related_products` parameter and appends a `Related from order/catalog graph: …` block to the directive.
+   - The route handler calls the resolver before the build, so the agent sees enriched context.
+
+2. **Skill** — `automatos-skills/shopify/shopify-support/SKILL.md`
+   - New `## Proactive opener mode` section codifies: lead with FBT signal when present, fall back to collection/vendor framing, never quote weak co-occurrence counts verbatim, never fabricate.
+
+3. **Fall-back** — when `related_products` is empty (no FBT signal yet, new product, non-product page like cart/checkout), the opener silently falls back to PRD-007 v0.4 Layer-1 behaviour. Zero regression risk.
+
+### Effort
+
+~3-4 hours including skill prompt iteration. No infra changes, no new tools, no widget changes.
+
+### Acceptance criteria
+
+| Check | Pass condition |
+|---|---|
+| Product page with FBT signal | Opener cites the FBT pair with weighted phrasing (e.g. "most installers pair…"); no raw numbers when co_count is weak |
+| Product page with NO FBT yet (new product) | Opener falls back to collection/vendor sibling OR pure Layer-1 page context |
+| Cart / checkout / homepage | Opener uses Layer-1 only (no seed product to traverse from); no errors |
+| Workspace with no graph built yet | Opener uses Layer-1 only; resolver returns empty list silently |
+| Graph load fails / orchestrator restart | Opener still returns within latency budget; resolver swallows exceptions, logs warning |
+
+### Dependencies
+
+- PRD-009 Layer 1 — ✅ shipped (forwards page_context into opener directive)
+- PRD-009 Layer 2 — ✅ shipped (catalog + FBT edges in workspace_graphs)
+- PRD-007 v0.4 opener — ✅ live
+
+### Companion PRDs
+
+- PRD-008-B Feature C2 (cart-page cross-sell) — next graph-driven engagement, different trigger and surface
+- PRD-008-A callback enrichment — could include the same related_products payload to give merchants context when calling shoppers back

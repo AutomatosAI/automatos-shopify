@@ -8,7 +8,6 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { restResources } from "@shopify/shopify-api/rest/admin/2025-04";
 import prisma from "./db.server";
-import { provisionShopFromSession } from "./provision.server";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -21,13 +20,16 @@ const shopify = shopifyApp({
   distribution: AppDistribution.AppStore,
   restResources,
   hooks: {
-    // Install-time provisioning (PRD-183 S6, Flow I). Runs after every OAuth
-    // completion; idempotent on shop domain. Also (re-)registers the
-    // app-specific webhook subscriptions declared in shopify.app.toml so the
-    // catalog + GDPR URIs actually resolve.
-    afterAuth: async ({ session, admin }) => {
+    // Runs after every OAuth completion. (Re-)registers the app-specific
+    // webhook subscriptions declared in shopify.app.toml so the catalog + GDPR
+    // URIs actually resolve.
+    //
+    // Install-time provisioning (mint widget key, store Shopify token, cache
+    // the key for Settings) happens once in auth.callback.tsx via
+    // provisionAndStore — do NOT provision here as well or the shop would be
+    // double-provisioned.
+    afterAuth: async ({ session }) => {
       await shopify.registerWebhooks({ session });
-      await provisionShopFromSession(session, admin);
     },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN

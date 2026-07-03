@@ -69,6 +69,24 @@
         customerTags: {{ customer.tags | default: '' | json }},
         cartItemCount: {{ cart.item_count | default: 0 | json }},
         cartTotalPrice: {{ cart.total_price | default: 0 | json }},
+        {%- comment %}
+        PRD-008-B Feature C2 (cart-idle graph-grounding): only render cart
+        line items on the cart template — payload is unused elsewhere and
+        keeps product handles off product/collection pages where it'd just
+        bloat data attrs.
+        {%- endcomment %}
+        {%- if template contains 'cart' %}
+        cartItems: [
+          {%- for item in cart.items %}
+          {
+            id: {{ item.product_id | json }},
+            handle: {{ item.product.handle | json }},
+            title: {{ item.product.title | json }},
+            qty: {{ item.quantity | default: 1 | json }}
+          }{% unless forloop.last %},{% endunless %}
+          {%- endfor %}
+        ],
+        {%- endif %}
       },
     });
   });
@@ -95,8 +113,7 @@
       "type": "text",
       "id": "widget_title",
       "label": "Widget title",
-      "info": "Shown in the chat header. Defaults to your shop name. 'Powered by Automatos AI' stays in the footer.",
-      "default": ""
+      "info": "Shown in the chat header. Leave blank to auto-use your shop name. 'Powered by Automatos AI' stays in the footer."
     },
     {
       "type": "select",

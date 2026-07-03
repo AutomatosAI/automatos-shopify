@@ -24,3 +24,16 @@ model Session {
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
 }
+
+// Caches the Automatos workspace + public widget key minted by
+// POST /api/shopify/provision so the embedded admin can show the merchant
+// their real ak_pub_ key (Settings) instead of forcing an out-of-band curl.
+// One workspace per shop; the shop domain is the natural key.
+model WorkspaceCredential {
+  shop              String   @id
+  workspacePublicId String
+  apiKey            String
+  agentsInstalled   Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
