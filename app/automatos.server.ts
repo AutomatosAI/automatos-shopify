@@ -2,19 +2,25 @@
  * Automatos Platform API Client
  *
  * Server-side client for the Automatos orchestrator's Shopify integration API.
+ * This is the single seam between the Shopify Remix admin and the platform.
  *
- * Endpoint contract: orchestrator/api/shopify.py
- *   POST /api/shopify/provision   — workspace + agents + public widget API key (one call)
- *   POST /api/shopify/connect     — store the merchant's Shopify access token
- *   POST /api/shopify/sync        — shop/update webhook
- *   POST /api/shopify/events      — orders/create + other webhooks
- *   POST /api/shopify/deactivate  — app uninstall
+ * Endpoint contract (PRD-183 Wave 13):
+ *   POST /api/verticals/shopify/provision  — workspace + agents + public widget API key (S5 generic vertical path)
+ *   POST /api/shopify/connect              — store the merchant's Shopify access token
+ *   POST /api/shopify/sync                 — shop/update webhook
+ *   POST /api/shopify/events               — catalog + other webhooks (S1: body carries type/id for the incremental graph builder, F032)
+ *   POST /api/shopify/deactivate           — app uninstall
+ *   POST /api/v1/gdpr/erase-subject        — customers/redact  (Wave 11 erase_data_subject entrypoint)
+ *   POST /api/v1/gdpr/erase                — shop/redact       (Wave 11 whole-workspace erase)
+ *   GET  /api/v1/gdpr/export               — customers/data_request (Wave 11 export bundle)
  *
- * Auth: Bearer <AUTOMATOS_API_KEY> against SHOPIFY_INTERNAL_API_KEY on the
- * orchestrator. Dev mode (no key configured server-side) accepts all calls.
+ * Auth: Bearer <AUTOMATOS_API_KEY>. The platform resolves the workspace from the
+ * shop domain (catalog/lifecycle path) or from the authenticated RequestContext
+ * (GDPR path). Dev mode (no key configured server-side) accepts unauthenticated calls.
  */
 
-const AUTOMATOS_API_URL = process.env.AUTOMATOS_API_URL || "https://api.automatos.app";
+const AUTOMATOS_API_URL =
+  process.env.AUTOMATOS_API_URL || "https://api.automatos.app";
 const AUTOMATOS_API_KEY = process.env.AUTOMATOS_API_KEY || "";
 
 export interface ProvisionResponse {
@@ -45,13 +51,22 @@ export interface EventResponse {
   event: string;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export interface GdprResponse {
+  [key: string]: unknown;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
   const url = `${AUTOMATOS_API_URL}${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(AUTOMATOS_API_KEY ? { Authorization: `Bearer ${AUTOMATOS_API_KEY}` } : {}),
+      ...(AUTOMATOS_API_KEY
+        ? { Authorization: `Bearer ${AUTOMATOS_API_KEY}` }
+        : {}),
       ...options.headers,
     },
   });
@@ -66,15 +81,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const automatosClient = {
   /**
-   * Provision an Automatos workspace for a Shopify store.
+   * Provision an Automatos workspace for a Shopify store (PRD-183 S5).
    * Idempotent on shop domain. Single call creates the workspace,
    * clones the Shopify marketplace agents, and mints a public widget API key.
+   * Goes through the generic vertical path so vertical #2 never forks api/shopify.py.
    */
   async provisionWorkspace(
     shop: string,
     shopData: Record<string, unknown>,
   ): Promise<ProvisionResponse> {
-    return request<ProvisionResponse>("/api/shopify/provision", {
+    return request<ProvisionResponse>("/api/verticals/shopify/provision", {
       method: "POST",
       body: JSON.stringify({
         source: "shopify",
@@ -137,7 +153,45 @@ export const automatosClient = {
   },
 
   /**
-   * Forward a Shopify webhook event for agent context.
+   * Forward a catalog-mutation webhook (products/*, collections/*) to the
+   * platform /events endpoint (PRD-183 S1).
+   *
+   * F032: the incremental commerce-graph builder filters pending sources on the
+   * `type`/`id` keys, so the forwarded body MUST carry them. We send the shop +
+   * event (which the platform keys off to resolve the workspace and trigger a
+   * catalog re-sync) alongside the explicit `type`/`id` and the raw payload.
+   *
+   * @param shop      myshopify domain
+   * @param resource  "products" | "collections" | ...
+   * @param verb      "create" | "update" | "delete"
+   * @param id        the Shopify GID of the mutated resource (may be undefined on some delete topics)
+   * @param payload   the raw webhook payload
+   */
+  async onCatalogEvent(
+    shop: string,
+    resource: string,
+    verb: string,
+    id: string | undefined,
+    payload: unknown,
+  ): Promise<void> {
+    const event = `${resource}/${verb}`;
+    await request<EventResponse>("/api/shopify/events", {
+      method: "POST",
+      body: JSON.stringify({
+        shop,
+        event,
+        // F032: type/id must be present for the incremental graph builder filter.
+        type: resource,
+        id,
+        data: payload,
+      }),
+    }).catch((err) => {
+      console.error(`[automatos] catalog event ${event} failed for ${shop}:`, err);
+    });
+  },
+
+  /**
+   * Forward a generic (non-catalog) Shopify webhook event for agent context.
    */
   async onShopifyEvent(
     shop: string,
@@ -149,6 +203,53 @@ export const automatosClient = {
       body: JSON.stringify({ shop, event, data: payload }),
     }).catch((err) => {
       console.error(`[automatos] event ${event} failed for ${shop}:`, err);
+    });
+  },
+
+  /**
+   * GDPR: customers/redact — erase a single data subject within the workspace
+   * (Wave 11 erase_data_subject entrypoint). Errors are logged, never thrown —
+   * Shopify retries compliance webhooks on non-2xx, but we must ack the HMAC-
+   * verified receipt regardless of platform availability.
+   */
+  async eraseDataSubject(shop: string, subjectId: string): Promise<void> {
+    await request<GdprResponse>("/api/v1/gdpr/erase-subject", {
+      method: "POST",
+      body: JSON.stringify({ shop, subject_id: subjectId }),
+    }).catch((err) => {
+      console.error(
+        `[automatos] gdpr erase-subject failed for ${shop} subject=${subjectId}:`,
+        err,
+      );
+    });
+  },
+
+  /**
+   * GDPR: shop/redact — erase the whole workspace for a shop 48h after uninstall
+   * (Wave 11 whole-workspace erase). The platform requires a confirmation echo of
+   * the workspace id; the shop domain lets it resolve + confirm server-side.
+   */
+  async eraseWorkspace(shop: string): Promise<void> {
+    await request<GdprResponse>("/api/v1/gdpr/erase", {
+      method: "POST",
+      body: JSON.stringify({ shop, source: "shopify" }),
+    }).catch((err) => {
+      console.error(`[automatos] gdpr erase failed for ${shop}:`, err);
+    });
+  },
+
+  /**
+   * GDPR: customers/data_request — export the data held for a subject/shop
+   * (Wave 11 export bundle). The shop/customer identifiers are passed as query
+   * params so the platform can scope the export.
+   */
+  async exportDataSubject(shop: string, customerId?: string): Promise<void> {
+    const params = new URLSearchParams({ shop });
+    if (customerId) params.set("customer_id", customerId);
+    await request<GdprResponse>(`/api/v1/gdpr/export?${params.toString()}`, {
+      method: "GET",
+    }).catch((err) => {
+      console.error(`[automatos] gdpr export failed for ${shop}:`, err);
     });
   },
 };

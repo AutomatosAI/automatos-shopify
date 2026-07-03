@@ -17,7 +17,7 @@ import {
   ProductIcon,
   BlogIcon,
   InventoryIcon,
-  AnalyticsIcon,
+  ChartVerticalIcon,
   PersonIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -106,7 +106,7 @@ export default function Index() {
             <WidgetCard
               title="Daily Brief"
               description="Morning snapshot: sales, traffic, inventory alerts, and recommended actions."
-              icon={AnalyticsIcon}
+              icon={ChartVerticalIcon}
               status="ready"
               link="/app/widgets/daily-brief"
             />
@@ -173,7 +173,7 @@ function WidgetCard({
 
   const statusTones = {
     active: "success" as const,
-    ready: "info" as const,
+    ready: "magic" as const,
     coming: "subdued" as const,
   };
 

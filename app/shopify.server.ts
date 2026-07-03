@@ -1,13 +1,14 @@
-import "@shopify/shopify-app-remix/adapters/node";
+import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
   shopifyApp,
-  type LoginErrorType,
-} from "@shopify/shopify-app-remix/server";
+  type LoginError as LoginErrorShape,
+} from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { restResources } from "@shopify/shopify-api/rest/admin/2025-04";
 import prisma from "./db.server";
+import { provisionShopFromSession } from "./provision.server";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -19,9 +20,15 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   restResources,
-  future: {
-    unstable_newEmbeddedAuthStrategy: true,
-    removeRest: false,
+  hooks: {
+    // Install-time provisioning (PRD-183 S6, Flow I). Runs after every OAuth
+    // completion; idempotent on shop domain. Also (re-)registers the
+    // app-specific webhook subscriptions declared in shopify.app.toml so the
+    // catalog + GDPR URIs actually resolve.
+    afterAuth: async ({ session, admin }) => {
+      await shopify.registerWebhooks({ session });
+      await provisionShopFromSession(session, admin);
+    },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
@@ -36,4 +43,4 @@ export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
-export type LoginError = LoginErrorType;
+export type LoginError = LoginErrorShape;

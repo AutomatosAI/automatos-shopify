@@ -17,7 +17,7 @@ import {
   ProductIcon,
   BlogIcon,
   InventoryIcon,
-  AnalyticsIcon,
+  ChartVerticalIcon,
   PersonIcon,
   GiftCardIcon,
   SearchIcon,
@@ -42,7 +42,7 @@ const WIDGETS: WidgetDef[] = [
   { slug: "product-qa", name: "Product Q&A", description: "Inline Q&A on product pages from specs and reviews", icon: ProductIcon, surface: "storefront", tier: 1, agent: "shopify-product-expert", status: "available" },
   { slug: "blog", name: "Blog", description: "AI-authored blog posts for organic SEO traffic", icon: BlogIcon, surface: "storefront", tier: 1, agent: "shopify-seo-content", status: "available" },
   // Tier 1 — Admin
-  { slug: "daily-brief", name: "Daily Brief", description: "Morning snapshot of sales, traffic, and alerts", icon: AnalyticsIcon, surface: "admin", tier: 1, agent: "shopify-business-analyst", status: "available" },
+  { slug: "daily-brief", name: "Daily Brief", description: "Morning snapshot of sales, traffic, and alerts", icon: ChartVerticalIcon, surface: "admin", tier: 1, agent: "shopify-business-analyst", status: "available" },
   { slug: "inventory", name: "Inventory Watchdog", description: "Stockout alerts and reorder suggestions", icon: InventoryIcon, surface: "admin", tier: 1, agent: "shopify-inventory-watchdog", status: "available" },
   // Tier 2
   { slug: "reviews", name: "Review Summarizer", description: "Honest pros/cons from customer reviews", icon: PersonIcon, surface: "storefront", tier: 2, agent: "shopify-review-analyst", status: "coming" },
@@ -95,7 +95,7 @@ function WidgetTile({ widget, onConfigure }: { widget: WidgetDef; onConfigure: (
   const toneMap = {
     active: "success" as const,
     available: "info" as const,
-    coming: "subdued" as const,
+    coming: undefined,
   };
 
   return (
