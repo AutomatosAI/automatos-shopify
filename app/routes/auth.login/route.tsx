@@ -12,8 +12,9 @@ import {
   TextField,
 } from "@shopify/polaris";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+import polarisTranslations from "@shopify/polaris/locales/en.json";
 
-import { login, type LoginError } from "../../shopify.server";
+import { login } from "../../shopify.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -22,7 +23,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     errors,
-    polarisTranslations: require("@shopify/polaris/locales/en.json"),
+    polarisTranslations,
   };
 };
 
@@ -54,7 +55,7 @@ export default function Auth() {
                 label="Shop domain"
                 helpText="e.g. my-shop.myshopify.com"
                 autoComplete="on"
-                error={(errors as LoginError)?.shop}
+                error={errors?.shop}
               />
               <Button submit>Log in</Button>
             </BlockStack>

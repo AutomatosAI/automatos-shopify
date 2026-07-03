@@ -12,18 +12,34 @@ dev_store_url = ""
 [webhooks]
 api_version = "2026-04"
 
+  # Mandatory Shopify GDPR / compliance webhooks → app/routes/webhooks.compliance.tsx
   [[webhooks.subscriptions]]
   uri = "/webhooks/compliance"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
+  # App lifecycle → app/routes/webhooks.app.uninstalled.tsx
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
+  # Catalog mutations → platform /events (PRD-183 S1) → app/routes/webhooks.catalog.tsx
+  [[webhooks.subscriptions]]
+  topics = [
+    "products/create",
+    "products/update",
+    "products/delete",
+    "collections/create",
+    "collections/update",
+    "collections/delete",
+  ]
+  uri = "/webhooks/catalog"
+
+  # Orders → platform /events → app/routes/webhooks.orders.create.tsx
   [[webhooks.subscriptions]]
   topics = [ "orders/create" ]
   uri = "/webhooks/orders/create"
 
+  # Shop metadata → app/routes/webhooks.shop.update.tsx
   [[webhooks.subscriptions]]
   topics = [ "shop/update" ]
   uri = "/webhooks/shop/update"
